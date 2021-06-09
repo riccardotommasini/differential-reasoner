@@ -156,7 +156,7 @@ where
     sco_type_rule
 }
 
-/// Fourth rule: T(x, p, b) <= T(p1, SPO, p),T(x, p1, y)
+/// Fourth rule: T(x, p, y) <= T(p1, SPO, p),T(x, p1, y)
 pub fn rule_4<G, V>(
     data_collection: &Collection<G, EncodedTriple<V>>,
     spo_value: V,
