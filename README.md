@@ -1,1 +1,2 @@
-# timely-reasoning
+A RDFS++ materalizer.
+

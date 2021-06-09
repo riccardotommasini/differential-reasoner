@@ -1,0 +1,3 @@
+<http://swat.cse.lehigh.edu/onto/univ-bench.owl#headOf> <http://www.w3.org/2000/01/rdf-schema#domain> <http://swat.cse.lehigh.edu/onto/univ-bench.owl#Person> .
+<http://swat.cse.lehigh.edu/onto/univ-bench.owl#headOf> <http://www.w3.org/2000/01/rdf-schema#range> <http://swat.cse.lehigh.edu/onto/univ-bench.owl#Institution> .
+<http://swat.cse.lehigh.edu/onto/univ-bench.owl#Employee> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://swat.cse.lehigh.edu/onto/univ-bench.owl#Worker> .
