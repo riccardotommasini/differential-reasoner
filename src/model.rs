@@ -28,6 +28,8 @@ pub static RDF_TYPE: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>";
 /// URI of owl:TransitiveProperty
 pub static OWL_TRANSITIVE_PROPERTY: &str =
     "<http://www.w3.org/2000/01/owl-syntax#transitiveProperty>";
+/// URI of owl:inverseOf
+pub static OWL_INVERSE_OF: &str = "<http://www.w3.org/2000/01/owl-syntax#inverseOf>";
 
 impl Triple {
     /// Prints only the local name with no namespace, just for easy reading

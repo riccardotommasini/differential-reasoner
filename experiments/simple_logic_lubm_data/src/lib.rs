@@ -8,29 +8,8 @@ use differential_dataflow::operators::JoinCore;
 use differential_dataflow::Collection;
 use timely::dataflow::Scope;
 
-// [IMPROVEMENT]:
-// Now, THIS IS WRONG, but for this simple case it works. Every rule needs to be parametrized
-// on the type of the encoder and the encoded triple should be:
-// <E::EncoderDataset as IntoIterator>::Item
 type EncodedTriple<T> = (T, T, T);
 
-/// First rule: T(a, SCO, c) <= T(a, SCO, b),T(b, SCO, c)
-// [IMPROVEMENT]:
-// The current implementation of the function passes the translated value of S_C_O. My original
-// idea was to pass parameter:
-//      map: E::MapStructure,
-// that as defined in the encoder module implements the BiMapTrait.
-// This allows the filter operator to contain something like:
-//      let v = if let Some(v) = map.get_right(&String::from(&model::S_C_O)) {
-//          v
-//      } else {
-//          panic!("Throw error here");
-//      };
-//      triple.1 == v
-// But this messes up all the lifetime as we would be required to pass the E::MapStructure inside
-// the filter closure. This creates an odd error that I don't fully comprehend. Uncomment the next
-// rule_1 function. To see the error and the overall situation.
-// Passing the sco_value as a V would make the trait BiMapTrait useless..
 pub fn inverseof_rule<G, V>(
     data: &Collection<G, EncodedTriple<V>>,
     inverseof_value: V,
@@ -43,16 +22,21 @@ where
 {
     let data_by_p = data.map(|(x, p, y)| (p, (x, y)));
 
-    let arranged_inverse_only_by_p = data_by_p
-        .filter(move |(p, (_x, _y))| *p == inverseof_value)
-        .map(|(_p, (x, y))| (x, y))
-        .arrange_by_key();
+    let inverse_only = data_by_p.filter(move |(p, (_x, _y))| *p == inverseof_value);
+
+    let arranged_inverse_only_by_p0 = inverse_only.map(|(_p, (x, y))| (x, y)).arrange_by_key();
+
+    let arranged_inverse_only_by_p1 = inverse_only.map(|(_p, (x, y))| (y, x)).arrange_by_key();
 
     let arranged_data_by_p = data_by_p.arrange_by_key();
 
-    arranged_inverse_only_by_p
-        .join_core(&arranged_data_by_p, |&_p0, &p1, &(x, y)| Some((y, p1, x)))
-        .consolidate()
+    let left_inverse_only_by_p0 = arranged_inverse_only_by_p0
+        .join_core(&arranged_data_by_p, |&_p0, &p1, &(x, y)| Some((y, p1, x)));
+
+    let right_inverse_only_by_p1 = arranged_inverse_only_by_p1
+        .join_core(&arranged_data_by_p, |&_p1, &p0, &(x, y)| Some((y, p0, x)));
+
+    left_inverse_only_by_p0.concat(&right_inverse_only_by_p1)
 }
 
 pub fn trans_property_rule<G, V>(
@@ -99,24 +83,16 @@ where
     V: std::cmp::Eq + std::hash::Hash + Clone + Copy + differential_dataflow::ExchangeData,
     EncodedTriple<V>: timely::Data + Ord + std::fmt::Debug,
 {
-    let sco_transitive_closure =
-        data_collection
-            //.filter(|triple| triple.predicate == model::RDFS_SUB_CLASS_OF)
-            .filter(move |triple| triple.1 == sco_value )
-            .iterate(|inner| {
-
-                inner
-                    .map(|triple| (triple.2, (triple.0, triple.1)))
-                    .join(&inner.map(|triple| (triple.0, (triple.1, triple.2))))
-                    .map(|(_obj, ((subj1, pred1), (_pred2, obj2)))|
-                        (subj1, pred1, obj2)
-                    )
-                    .concat(&inner)
-                    .threshold(|_,c| { if c > &0 { 1 } else if c < &0 { -1 } else { 0 } })
-
-            })
-            //.inspect(|x| println!("AFTER_RULE_1: {:?}", x))
-        ;
+    let sco_transitive_closure = data_collection
+        .filter(move |triple| triple.1 == sco_value)
+        .iterate(|inner| {
+            inner
+                .map(|triple| (triple.2, (triple.0, triple.1)))
+                .join(&inner.map(|triple| (triple.0, (triple.1, triple.2))))
+                .map(|(_obj, ((subj1, pred1), (_pred2, obj2)))| (subj1, pred1, obj2))
+                .concat(&inner)
+                .distinct()
+        });
 
     sco_transitive_closure
 }
@@ -140,15 +116,7 @@ where
                 .join(&inner.map(|triple| (triple.0, (triple.1, triple.2))))
                 .map(|(_obj, ((subj1, pred1), (_pred2, obj2)))| (subj1, pred1, obj2))
                 .concat(&inner)
-                .threshold(|_, c| {
-                    if c > &0 {
-                        1
-                    } else if c < &0 {
-                        -1
-                    } else {
-                        0
-                    }
-                })
+                .distinct()
         });
 
     spo_transitive_closure
@@ -182,15 +150,7 @@ where
             .join(&sco_only_in.map(|triple| (triple.0, (triple.1, triple.2))))
             .map(|(_key, ((x, typ), (_sco, b)))| (x, typ, b))
             .concat(&inner)
-            .threshold(|_, c| {
-                if c > &0 {
-                    1
-                } else if c < &0 {
-                    -1
-                } else {
-                    0
-                }
-            })
+            .distinct()
     });
 
     sco_type_rule
@@ -207,7 +167,6 @@ where
     V: std::cmp::Eq + std::hash::Hash + Clone + Copy + differential_dataflow::ExchangeData,
     EncodedTriple<V>: timely::Data + Ord + std::fmt::Debug,
 {
-    // Select only the triples whose predicate participates in a SPO triple
     let spo_only_out = data_collection.filter(move |triple| triple.1 == spo_value);
 
     let candidates = data_collection
@@ -222,15 +181,7 @@ where
             .join(&spo_only.map(|triple| (triple.0, (triple.1, triple.2))))
             .map(|(_key, ((x, y), (_spo, p)))| (x, p, y))
             .concat(&inner)
-            .threshold(|_, c| {
-                if c > &0 {
-                    1
-                } else if c < &0 {
-                    -1
-                } else {
-                    0
-                }
-            })
+            .distinct()
     });
     spo_type_rule
 }
@@ -254,8 +205,6 @@ where
         .join(&only_domain.map(|triple| (triple.0, ())))
         .map(|(_, (triple, ()))| triple);
 
-    // This does not require a iterative dataflow, the rule does not produce
-    // terms that are used by the rule itself
     let domain_type_rule = candidates
         .map(|triple| (triple.1, (triple.0, triple.2)))
         .join(&only_domain.map(|triple| (triple.0, (triple.1, triple.2))))
@@ -283,8 +232,6 @@ where
         .join(&only_range.map(|triple| (triple.0, ())))
         .map(|(_, (triple, ()))| triple);
 
-    // This does not require a iterative dataflow, the rule does not produce
-    // terms that are used by the rule itself
     let domain_type_rule = candidates
         .map(|triple| (triple.1, (triple.0, triple.2)))
         .join(&only_range.map(|triple| (triple.0, (triple.1, triple.2))))
@@ -310,9 +257,8 @@ pub fn full_materialization<G, V>(
     // rdfs_keywords[3] = sub_domain
     // rdfs_keywords[4] = sub_range
     // rdfs_keywords[5] = transitive_property
-    // [IMPROVEMENT]:
-    // Maybe an HashMap here? Seems overkill still
-    rdfs_keywords: &[V; 6],
+    // rdfs_keywords[6] = inverse_of
+    rdfs_keywords: &[V; 7],
 ) -> TraceAgent<OrdKeySpine<EncodedTriple<V>, G::Timestamp, isize>>
 where
     G: Scope,
@@ -320,32 +266,29 @@ where
     V: std::cmp::Eq + std::hash::Hash + Clone + Copy + differential_dataflow::ExchangeData,
     EncodedTriple<V>: timely::Data + Ord + std::fmt::Debug,
 {
-    // ASSUMPTION: WE ARE HARDCODING THE RULES IN HERE
-    // We only have two kinds of rules:
-    // the ones that deal with only the T_box:
-    // T(a, SCO, c) <= T(a, SCO, b),T(b, SCO, c)
-    // T(a, SPO, c) <= T(a, SPO, b),T(b, SPO, c)
-    // the ones that deal with both the a_box and the t_box
-    // T(x, TYPE, b) <= T(a, SCO, b),T(x, TYPE, a)
-    // T(x, p, y) <= T(p1, SPO, p),T(x, p1, y)
-    // T(a, TYPE, D) <= T(p, DOMAIN, D),T(a, p, b)
-    // T(b, TYPE, R) <= T(p, RANGE, R),T(a, p, b)
-
     // Orders matters, to guarantee a correct execution of the materialization:
-    // T(a, SPO, z) <= T(a, SPO, b), T(b, SPO, c), SPO == Trans -- rule_trans
+    // T(a, p, c) <= T(a, p, b), T(b, p, c), p == Trans -- rule_trans
+    // T(y, p', x) <= T(p, INV, p'), T(x, p, y)         -- rule_inverseof
     // T(a, SCO, c) <= T(a, SCO, b),T(b, SCO, c)        -- rule_1
     // T(a, SPO, c) <= T(a, SPO, b),T(b, SPO, c)        -- rule_2
-    // T(a, SPO, z) <= T(a, SPO, b), T(b, SPO, c), SPO == Trans -- rule_trans
-    // T(x, p, y) <= T(p1, SPO, p),T(x, p1, y)          -- rule_4
+    // T(a, p, c) <= T(a, p, b), T(b, p, c), p == Trans -- rule_trans
+    // T(y, p', x) <= T(p, INV, p'), T(x, p, y)         -- rule_inverseof
+    // T(x, p, y) <= T(p1, SPO, p),T(x, p1, y)          -- rule_4, maybe trans and inverseof after this?
     // T(a, TYPE, D) <= T(p, DOMAIN, D),T(a, p, b)      -- rule_5
     // T(b, TYPE, R) <= T(p, RANGE, R),T(a, p, b)       -- rule_6
     // T(x, TYPE, b) <= T(a, SCO, b),T(x, TYPE, a)      -- rule_3
     // as we can see there is no rule with a literal in the body that
     // corresponds to a literal in the head of any subsequent rule
 
+    //println!("{:?}", rdfs_keywords);
+
     let data_input = trans_property_rule(&data_input, rdfs_keywords[2], rdfs_keywords[5])
         .concat(&data_input)
         .distinct();
+
+    let inverseof_rule_application = inverseof_rule(&data_input, rdfs_keywords[6]);
+
+    let data_input = inverseof_rule_application.concat(&data_input).distinct();
 
     let sco_transitive_closure = rule_1(&data_input, rdfs_keywords[0]);
 
@@ -354,74 +297,31 @@ where
     let data_input = data_input
         .concat(&sco_transitive_closure)
         .concat(&spo_transitive_closure)
-        //  VERY IMPORTANT: THE DISTINCT PUTS THE REMOVAL INTO ADDITION
-        // SO WE REWRITE THE DISTINCT TO KEEP THE REMOVAL -1
-        // .distinct()
-        .threshold(|_, c| {
-            if c > &0 {
-                1
-            } else if c < &0 {
-                -1
-            } else {
-                0
-            }
-        });
+        .distinct();
 
     let data_input = trans_property_rule(&data_input, rdfs_keywords[2], rdfs_keywords[5])
         .concat(&data_input)
         .distinct();
 
+    let data_input = inverseof_rule(&data_input, rdfs_keywords[6])
+        .concat(&data_input)
+        .distinct();
+
     let spo_type_rule = rule_4(&data_input, rdfs_keywords[1]);
 
-    let data_input = data_input.concat(&spo_type_rule).threshold(|_, c| {
-        if c > &0 {
-            1
-        } else if c < &0 {
-            -1
-        } else {
-            0
-        }
-    });
+    let data_input = data_input.concat(&spo_type_rule).distinct();
 
     let domain_type_rule = rule_5(&data_input, rdfs_keywords[3], rdfs_keywords[2]);
 
-    // We don't need this, but still :P
-    let data_input = data_input.concat(&domain_type_rule).threshold(|_, c| {
-        if c > &0 {
-            1
-        } else if c < &0 {
-            -1
-        } else {
-            0
-        }
-    });
+    let data_input = data_input.concat(&domain_type_rule).distinct();
 
     let range_type_rule = rule_6(&data_input, rdfs_keywords[4], rdfs_keywords[2]);
 
-    let data_input = data_input.concat(&range_type_rule).threshold(|_, c| {
-        if c > &0 {
-            1
-        } else if c < &0 {
-            -1
-        } else {
-            0
-        }
-    });
+    let data_input = data_input.concat(&range_type_rule).distinct();
 
     let sco_type_rule = rule_3(&data_input, rdfs_keywords[2], rdfs_keywords[0]);
 
-    let data_input = data_input
-        .concat(&sco_type_rule)
-        // .distinct()
-        .threshold(|_, c| {
-            if c > &0 {
-                1
-            } else if c < &0 {
-                -1
-            } else {
-                0
-            }
-        });
+    let data_input = data_input.concat(&sco_type_rule).distinct();
 
     let arrangement = data_input.arrange_by_self();
 

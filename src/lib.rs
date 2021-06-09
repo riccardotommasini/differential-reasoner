@@ -5,8 +5,8 @@ extern crate lalrpop_util;
 use crate::encoder::BiMapTrait;
 use crate::eval::Statistics;
 use crate::model::{
-    OWL_TRANSITIVE_PROPERTY, RDFS_DOMAIN, RDFS_RANGE, RDFS_SUB_CLASS_OF, RDFS_SUB_PROPERTY_OF,
-    RDF_TYPE,
+    OWL_INVERSE_OF, OWL_TRANSITIVE_PROPERTY, RDFS_DOMAIN, RDFS_RANGE, RDFS_SUB_CLASS_OF,
+    RDFS_SUB_PROPERTY_OF, RDF_TYPE,
 };
 use differential_dataflow::input::{Input, InputSession};
 use differential_dataflow::operators::arrange::TraceAgent;
@@ -247,7 +247,7 @@ where
             >,
             &mut ProbeHandle<usize>,
             // RDFS keywords. These might be needed
-            &[R; 6],
+            &[R; 7],
         )
             -> TraceAgent<OrdKeySpine<<E::EncodedDataSet as IntoIterator>::Item, usize, isize>>
         + Send
@@ -298,6 +298,7 @@ where
         *encoder.get_right_from_map(L::from(String::from(RDFS_DOMAIN))),
         *encoder.get_right_from_map(L::from(String::from(RDFS_RANGE))),
         *encoder.get_right_from_map(L::from(String::from(OWL_TRANSITIVE_PROPERTY))),
+        *encoder.get_right_from_map(L::from(String::from(OWL_INVERSE_OF))),
     ];
 
     let mut update_paths = vec![];

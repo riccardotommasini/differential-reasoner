@@ -16,6 +16,9 @@ _:genid1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> <http://swat.cse.leh
 <http://swat.cse.lehigh.edu/onto/univ-bench.owl#headOf> <http://www.w3.org/2000/01/rdf-schema#subPropertyOf> <http://swat.cse.lehigh.edu/onto/univ-bench.owl#worksFor> .
 <http://swat.cse.lehigh.edu/onto/univ-bench.owl#memberOf> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2002/07/owl#ObjectProperty> .
 <http://swat.cse.lehigh.edu/onto/univ-bench.owl#memberOf> <http://www.w3.org/2000/01/rdf-schema#label> "member of" .
+<http://swat.cse.lehigh.edu/onto/univ-bench.owl#employs> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2002/07/owl#ObjectProperty> .
+<http://swat.cse.lehigh.edu/onto/univ-bench.owl#employs> <http://www.w3.org/2000/01/rdf-schema#label> "employs" .
+<http://swat.cse.lehigh.edu/onto/univ-bench.owl#employs> <http://www.w3.org/2000/01/owl-syntax#inverseOf> <http://swat.cse.lehigh.edu/onto/univ-bench.owl#worksFor> .
 <http://swat.cse.lehigh.edu/onto/univ-bench.owl#worksFor> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2002/07/owl#ObjectProperty> .
 <http://swat.cse.lehigh.edu/onto/univ-bench.owl#worksFor> <http://www.w3.org/2000/01/rdf-schema#label> "Works For" .
 <http://swat.cse.lehigh.edu/onto/univ-bench.owl#worksFor> <http://www.w3.org/2000/01/rdf-schema#subPropertyOf> <http://swat.cse.lehigh.edu/onto/univ-bench.owl#memberOf> .

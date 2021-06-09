@@ -1,2 +1,2 @@
 Average Encoding Time (ms)
-4.16
+3.9523809523809526
