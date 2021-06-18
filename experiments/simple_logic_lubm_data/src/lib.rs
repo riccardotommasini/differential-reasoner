@@ -3,7 +3,6 @@ use differential_dataflow::operators::arrange::arrangement::ArrangeByKey;
 use differential_dataflow::operators::iterate::Iterate;
 use differential_dataflow::operators::join::Join;
 use differential_dataflow::operators::reduce::Threshold;
-use differential_dataflow::operators::Consolidate;
 use differential_dataflow::operators::JoinCore;
 use differential_dataflow::Collection;
 use timely::dataflow::Scope;
@@ -34,7 +33,7 @@ where
         .join_core(&arranged_data_by_p, |&_p0, &p1, &(x, y)| Some((y, p1, x)));
 
     let right_inverse_only_by_p1 = arranged_inverse_only_by_p1
-        .join_core(&arranged_data_by_p, |&_p1, &p0, &(x, y)| Some((y, p0, x)));
+        .join_core(&arranged_data_by_p, |&_p1, &p0, &(y, x)| Some((x, p0, y)));
 
     left_inverse_only_by_p0.concat(&right_inverse_only_by_p1)
 }
@@ -57,9 +56,8 @@ where
         .map(|(x, _p, _y)| (x, ()))
         .arrange_by_key();
 
-    let trans_only_triples = trans_only_p
-        .join_core(&data_arranged_by_p, |&p, &(), &(x, y)| Some((x, p, y)))
-        .consolidate();
+    let trans_only_triples =
+        trans_only_p.join_core(&data_arranged_by_p, |&p, &(), &(x, y)| Some((x, p, y)));
 
     trans_only_triples.iterate(|inner| {
         let by_subject_predicate = inner.map(|(x, p, y)| ((x, p), y)).arrange_by_key();
@@ -67,7 +65,6 @@ where
 
         by_subject_predicate
             .join_core(&by_object_predicate, |&(_y, p), &z, &x| Some((x, p, z)))
-            .consolidate()
             .concat(&inner)
             .distinct()
     })
@@ -83,7 +80,7 @@ where
     V: std::cmp::Eq + std::hash::Hash + Clone + Copy + differential_dataflow::ExchangeData,
     EncodedTriple<V>: timely::Data + Ord + std::fmt::Debug,
 {
-    let sco_transitive_closure = data_collection
+    data_collection
         .filter(move |triple| triple.1 == sco_value)
         .iterate(|inner| {
             inner
@@ -92,9 +89,7 @@ where
                 .map(|(_obj, ((subj1, pred1), (_pred2, obj2)))| (subj1, pred1, obj2))
                 .concat(&inner)
                 .distinct()
-        });
-
-    sco_transitive_closure
+        })
 }
 
 /// Second rule: T(a, SPO, c) <= T(a, SPO, b),T(b, SPO, c)
@@ -108,7 +103,7 @@ where
     V: std::cmp::Eq + std::hash::Hash + Clone + Copy + differential_dataflow::ExchangeData,
     EncodedTriple<V>: timely::Data + Ord + std::fmt::Debug,
 {
-    let spo_transitive_closure = data_collection
+    data_collection
         .filter(move |triple| triple.1 == spo_value)
         .iterate(|inner| {
             inner
@@ -117,9 +112,7 @@ where
                 .map(|(_obj, ((subj1, pred1), (_pred2, obj2)))| (subj1, pred1, obj2))
                 .concat(&inner)
                 .distinct()
-        });
-
-    spo_transitive_closure
+        })
 }
 
 /// Third rule: T(x, TYPE, b) <= T(a, SCO, b),T(x, TYPE, a)
@@ -142,7 +135,7 @@ where
         .join(&sco_only.map(|triple| (triple.0, ())))
         .map(|(_key, (triple, ()))| triple);
 
-    let sco_type_rule = candidates.iterate(|inner| {
+    candidates.iterate(|inner| {
         let sco_only_in = sco_only.enter(&inner.scope());
 
         inner
@@ -151,9 +144,7 @@ where
             .map(|(_key, ((x, typ), (_sco, b)))| (x, typ, b))
             .concat(&inner)
             .distinct()
-    });
-
-    sco_type_rule
+    })
 }
 
 /// Fourth rule: T(x, p, y) <= T(p1, SPO, p),T(x, p1, y)
@@ -170,11 +161,11 @@ where
     let spo_only_out = data_collection.filter(move |triple| triple.1 == spo_value);
 
     let candidates = data_collection
-        .map(|triple| ((triple.1.clone()), triple))
+        .map(|triple| ((triple.1, triple)))
         .join(&spo_only_out.map(|triple| ((triple.0), ())))
         .map(|(_, (triple, ()))| triple);
 
-    let spo_type_rule = candidates.iterate(|inner| {
+    candidates.iterate(|inner| {
         let spo_only = spo_only_out.enter(&inner.scope());
         inner
             .map(|triple| (triple.1, (triple.0, triple.2)))
@@ -182,8 +173,7 @@ where
             .map(|(_key, ((x, y), (_spo, p)))| (x, p, y))
             .concat(&inner)
             .distinct()
-    });
-    spo_type_rule
+    })
 }
 
 /// Fifth rule: T(a, TYPE, D) <= T(p, DOMAIN, D),T(a, p, b)
@@ -201,16 +191,14 @@ where
     let only_domain = data_collection.filter(move |triple| triple.1 == domain_value);
 
     let candidates = data_collection
-        .map(|triple| ((triple.1.clone()), triple))
+        .map(|triple| (triple.1, triple))
         .join(&only_domain.map(|triple| (triple.0, ())))
         .map(|(_, (triple, ()))| triple);
 
-    let domain_type_rule = candidates
+    candidates
         .map(|triple| (triple.1, (triple.0, triple.2)))
         .join(&only_domain.map(|triple| (triple.0, (triple.1, triple.2))))
-        .map(move |(_key, ((a, _b), (_dom, d)))| (a, type_value, d));
-
-    domain_type_rule
+        .map(move |(_key, ((a, _b), (_dom, d)))| (a, type_value, d))
 }
 
 /// Sixth rule: T(b, TYPE, R) <= T(p, RANGE, R),T(a, p, b)
@@ -228,16 +216,14 @@ where
     let only_range = data_collection.filter(move |triple| triple.1 == range_value);
 
     let candidates = data_collection
-        .map(|triple| ((triple.1.clone()), triple))
+        .map(|triple| ((triple.1, triple)))
         .join(&only_range.map(|triple| (triple.0, ())))
         .map(|(_, (triple, ()))| triple);
 
-    let domain_type_rule = candidates
+    candidates
         .map(|triple| (triple.1, (triple.0, triple.2)))
         .join(&only_range.map(|triple| (triple.0, (triple.1, triple.2))))
-        .map(move |(_key, ((_a, b), (_ran, r)))| (b, type_value, r));
-
-    domain_type_rule
+        .map(move |(_key, ((_a, b), (_ran, r)))| (b, type_value, r))
 }
 
 use differential_dataflow::operators::arrange::arrangement::ArrangeBySelf;
@@ -266,19 +252,21 @@ where
     V: std::cmp::Eq + std::hash::Hash + Clone + Copy + differential_dataflow::ExchangeData,
     EncodedTriple<V>: timely::Data + Ord + std::fmt::Debug,
 {
-    // Orders matters, to guarantee a correct execution of the materialization:
-    // T(a, p, c) <= T(a, p, b), T(b, p, c), p == Trans -- rule_trans
-    // T(y, p', x) <= T(p, INV, p'), T(x, p, y)         -- rule_inverseof
-    // T(a, SCO, c) <= T(a, SCO, b),T(b, SCO, c)        -- rule_1
-    // T(a, SPO, c) <= T(a, SPO, b),T(b, SPO, c)        -- rule_2
-    // T(a, p, c) <= T(a, p, b), T(b, p, c), p == Trans -- rule_trans
-    // T(y, p', x) <= T(p, INV, p'), T(x, p, y)         -- rule_inverseof
-    // T(x, p, y) <= T(p1, SPO, p),T(x, p1, y)          -- rule_4, maybe trans and inverseof after this?
-    // T(a, TYPE, D) <= T(p, DOMAIN, D),T(a, p, b)      -- rule_5
-    // T(b, TYPE, R) <= T(p, RANGE, R),T(a, p, b)       -- rule_6
-    // T(x, TYPE, b) <= T(a, SCO, b),T(x, TYPE, a)      -- rule_3
-    // as we can see there is no rule with a literal in the body that
-    // corresponds to a literal in the head of any subsequent rule
+    /*
+    Orders matters, to guarantee a correct execution of the materialization:
+    T(a, p, c) <= T(a, p, b), T(b, p, c), p == Trans -- rule_trans
+    T(y, p', x) <= T(p, INV, p'), T(x, p, y)         -- rule_inverseof
+    T(a, SCO, c) <= T(a, SCO, b),T(b, SCO, c)        -- rule_1
+    T(a, SPO, c) <= T(a, SPO, b),T(b, SPO, c)        -- rule_2
+    T(a, p, c) <= T(a, p, b), T(b, p, c), p == Trans -- rule_trans
+    T(y, p', x) <= T(p, INV, p'), T(x, p, y)         -- rule_inverseof
+    T(x, p, y) <= T(p1, SPO, p),T(x, p1, y)          -- rule_4, maybe trans or inverseOf after this?
+    T(a, TYPE, D) <= T(p, DOMAIN, D),T(a, p, b)      -- rule_5
+    T(b, TYPE, R) <= T(p, RANGE, R),T(a, p, b)       -- rule_6
+    T(x, TYPE, b) <= T(a, SCO, b),T(x, TYPE, a)      -- rule_3
+    as we can see there is no rule with a literal in the body that
+    corresponds to a literal in the head of any subsequent rule
+    */
 
     //println!("{:?}", rdfs_keywords);
 
@@ -333,7 +321,6 @@ where
 // Data processing relative to university
 // THIS NEEDS TO ADAPT TO THE NEW WAY THE SYSTEM SAVES THE PERFORMANCE DATA.
 // AS OF RIGHT NOW THIS CANNOT BE USED
-
 use reasoning_service::eval::{PlotInfo, Plotter};
 use reasoning_service::Args;
 use std::io::BufRead;
