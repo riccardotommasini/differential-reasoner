@@ -1,4 +1,8 @@
-A RDFS++ materalizer.
+A `Friendly RDFS+` materalizer.
+
+Why is called `Friendly`?
+
+It's nigh guaranteed that whenever someone tries to explain transitivity, they will give the "friendsOf" example i.e if a is friends with b and b is friends with c, then a is friends with c.
 
 All of `rhoDF` + `owl:inverseOf` + `owl:TransitiveProperty`.
 
@@ -15,3 +19,11 @@ What is there to do:
 [ ] - Remove all unnecessary/experiment cruft.
 
 [ ] - Allow building views through `SPARQL`.
+
+In short, this is how the current architecture looks like:
+
+![](imgs/current_architecture.png)
+
+And this is how I think things should be:
+
+![](imgs/proposed_architecture.png)

@@ -260,7 +260,8 @@ where
     T(a, SPO, c) <= T(a, SPO, b),T(b, SPO, c)        -- rule_2
     T(a, p, c) <= T(a, p, b), T(b, p, c), p == Trans -- rule_trans
     T(y, p', x) <= T(p, INV, p'), T(x, p, y)         -- rule_inverseof
-    T(x, p, y) <= T(p1, SPO, p),T(x, p1, y)          -- rule_4, maybe trans or inverseOf after this?
+    T(x, p, y) <= T(p1, SPO, p),T(x, p1, y)          -- rule_4
+    T(y, p', x) <= T(p, INV, p'), T(x, p, y)         -- rule_inverseof
     T(a, TYPE, D) <= T(p, DOMAIN, D),T(a, p, b)      -- rule_5
     T(b, TYPE, R) <= T(p, RANGE, R),T(a, p, b)       -- rule_6
     T(x, TYPE, b) <= T(a, SCO, b),T(x, TYPE, a)      -- rule_3
@@ -298,6 +299,10 @@ where
     let spo_type_rule = rule_4(&data_input, rdfs_keywords[1]);
 
     let data_input = data_input.concat(&spo_type_rule).distinct();
+
+    let data_input = inverseof_rule(&data_input, rdfs_keywords[6])
+        .concat(&data_input)
+        .distinct();
 
     let domain_type_rule = rule_5(&data_input, rdfs_keywords[3], rdfs_keywords[2]);
 
