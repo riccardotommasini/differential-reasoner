@@ -271,6 +271,8 @@ where
 
     //println!("{:?}", rdfs_keywords);
 
+    /*
+
     let data_input = trans_property_rule(&data_input, rdfs_keywords[2], rdfs_keywords[5])
         .concat(&data_input)
         .distinct();
@@ -278,6 +280,8 @@ where
     let inverseof_rule_application = inverseof_rule(&data_input, rdfs_keywords[6]);
 
     let data_input = inverseof_rule_application.concat(&data_input).distinct();
+
+    */
 
     let sco_transitive_closure = rule_1(&data_input, rdfs_keywords[0]);
 
@@ -288,6 +292,8 @@ where
         .concat(&spo_transitive_closure)
         .distinct();
 
+    /*
+
     let data_input = trans_property_rule(&data_input, rdfs_keywords[2], rdfs_keywords[5])
         .concat(&data_input)
         .distinct();
@@ -296,13 +302,19 @@ where
         .concat(&data_input)
         .distinct();
 
+    */
+
     let spo_type_rule = rule_4(&data_input, rdfs_keywords[1]);
 
     let data_input = data_input.concat(&spo_type_rule).distinct();
 
+    /*
+
     let data_input = inverseof_rule(&data_input, rdfs_keywords[6])
         .concat(&data_input)
         .distinct();
+
+    */
 
     let domain_type_rule = rule_5(&data_input, rdfs_keywords[3], rdfs_keywords[2]);
 
