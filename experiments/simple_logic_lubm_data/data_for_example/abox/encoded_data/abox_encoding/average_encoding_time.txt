@@ -1,2 +1,0 @@
-Average Encoding Time (ms)
-0
