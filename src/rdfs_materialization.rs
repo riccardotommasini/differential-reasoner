@@ -7,19 +7,31 @@ use differential_dataflow::operators::JoinCore;
 use differential_dataflow::Collection;
 use timely::dataflow::Scope;
 
-type EncodedTriple = (u32, u32, u32);
+type EncodedTriple = (usize, usize, usize);
 
-pub fn inverseof_rule<G>(
-    data: &Collection<G, EncodedTriple>,
-    inverseof_value: u32,
-) -> Collection<G, EncodedTriple>
+pub fn efficient_transitivity<G>(data: &Collection<G, EncodedTriple>) -> Collection<G, EncodedTriple>
+where
+    G: Scope,
+    G::Timestamp: Lattice,
+{
+    let by_subject_predicate = data.map(|(x, p, y)| ((x, p), y)).arrange_by_key();
+    let by_object_predicate = data.map(|(x, p, y)| ((y, p), x)).arrange_by_key();
+
+    by_subject_predicate
+         .join_core(&by_object_predicate, |&(_y, p), &z, &x| Some((x, p, z)))
+         .concat(&data)
+         .distinct()
+    
+}
+
+pub fn inverseof_rule<G>(data: &Collection<G, EncodedTriple>) -> Collection<G, EncodedTriple>
 where
     G: Scope,
     G::Timestamp: Lattice,
 {
     let data_by_p = data.map(|(x, p, y)| (p, (x, y)));
-
-    let inverse_only = data_by_p.filter(move |(p, (_x, _y))| *p == inverseof_value);
+    /// 6 = INVERSE_OF
+    let inverse_only = data_by_p.filter(move |(p, (_x, _y))| *p == 6);
 
     let arranged_inverse_only_by_p0 = inverse_only.map(|(_p, (x, y))| (x, y)).arrange_by_key();
 
@@ -36,98 +48,64 @@ where
     left_inverse_only_by_p0.concat(&right_inverse_only_by_p1)
 }
 
-pub fn trans_property_rule<G>(
-    data: &Collection<G, EncodedTriple>,
-    type_value: u32,
-    transitivity_value: u32,
-) -> Collection<G, EncodedTriple>
+pub fn trans_property_rule<G>(data: &Collection<G, EncodedTriple>) -> Collection<G, EncodedTriple>
 where
     G: Scope,
     G::Timestamp: Lattice,
 {
     let data_arranged_by_p = data.map(|(x, p, y)| (p, (x, y))).arrange_by_key();
-
+    /// 5 = TRANSITIVE_PROPERTY
     let trans_only_p = data
-        .filter(move |(_x, p, y)| *p == type_value && *y == transitivity_value)
+        .filter(move |(_x, p, y)| *p == 5 && *y == 6)
         .map(|(x, _p, _y)| (x, ()))
         .arrange_by_key();
 
     let trans_only_triples =
         trans_only_p.join_core(&data_arranged_by_p, |&p, &(), &(x, y)| Some((x, p, y)));
 
-    trans_only_triples.iterate(|inner| {
-        let by_subject_predicate = inner.map(|(x, p, y)| ((x, p), y)).arrange_by_key();
-        let by_object_predicate = inner.map(|(x, p, y)| ((y, p), x)).arrange_by_key();
-
-        by_subject_predicate
-            .join_core(&by_object_predicate, |&(_y, p), &z, &x| Some((x, p, z)))
-            .concat(&inner)
-            .distinct()
-    })
+    trans_only_triples.iterate(|inner| efficient_transitivity(inner))
 }
 
-pub fn rule_1<G>(
-    data_collection: &Collection<G, EncodedTriple>,
-    sco_value: u32,
-) -> Collection<G, EncodedTriple>
+/// Eleventh rule: [x, SCO, z] <= [x, SCO, y], [y, SCO, z]
+pub fn rule_11<G>(data_collection: &Collection<G, EncodedTriple>) -> Collection<G, EncodedTriple>
 where
     G: Scope,
     G::Timestamp: Lattice,
 {
+    /// 0 = SCO
     data_collection
-        .filter(move |triple| triple.1 == sco_value)
-        .iterate(|inner| {
-            inner
-                .map(|triple| (triple.2, (triple.0, triple.1)))
-                .join(&inner.map(|triple| (triple.0, (triple.1, triple.2))))
-                .map(|(_obj, ((subj1, pred1), (_pred2, obj2)))| (subj1, pred1, obj2))
-                .concat(&inner)
-                .distinct()
-        })
+	.filter(move |(s, p, o)| p == &0usize)
+        .iterate(|inner| efficient_transitivity(inner))
 }
 
-/// Second rule: T(a, SPO, c) <= T(a, SPO, b),T(b, SPO, c)
-pub fn rule_2<G>(
-    data_collection: &Collection<G, EncodedTriple>,
-    spo_value: u32,
-) -> Collection<G, EncodedTriple>
+/// Fifth rule: [x, SPO, z] <= [x, SPO, y], [y, SPO, z]
+pub fn rule_5<G>(data_collection: &Collection<G, EncodedTriple>) -> Collection<G, EncodedTriple>
 where
     G: Scope,
     G::Timestamp: Lattice,
 {
+    /// 1 = SPO
     data_collection
-        .filter(move |triple| triple.1 == spo_value)
-        .iterate(|inner| {
-            inner
-                .map(|triple| (triple.2, (triple.0, triple.1)))
-                .join(&inner.map(|triple| (triple.0, (triple.1, triple.2))))
-                .map(|(_obj, ((subj1, pred1), (_pred2, obj2)))| (subj1, pred1, obj2))
-                .concat(&inner)
-                .distinct()
-        })
+        .filter(move |(s, p, o)| p == &1usize)
+        .iterate(|inner| efficient_transitivity(inner))
 }
 
-/// Third rule: T(x, TYPE, b) <= T(a, SCO, b),T(x, TYPE, a)
-pub fn rule_3<G>(
-    data_collection: &Collection<G, EncodedTriple>,
-    type_value: u32,
-    sco_value: u32,
-) -> Collection<G, EncodedTriple>
+/// Ninth rule: [z, TYPE, y] <= [x, SCO, y], [z, TYPE, x]
+pub fn rule_9<G>(data_collection: &Collection<G, EncodedTriple>) -> Collection<G, EncodedTriple>
 where
     G: Scope,
     G::Timestamp: Lattice,
 {
-    let sco_only = data_collection.filter(move |triple| triple.1 == sco_value);
-
+    let sco_only = data_collection.filter(move |triple| triple.1 == 0);
+    /// 4 = TYPE
     let candidates = data_collection
-        .filter(move |triple| triple.1 == type_value)
+        .filter(move |triple| triple.1 == 4)
         .map(|triple| (triple.2.clone(), (triple)))
         .join(&sco_only.map(|triple| (triple.0, ())))
         .map(|(_key, (triple, ()))| triple);
 
     candidates.iterate(|inner| {
         let sco_only_in = sco_only.enter(&inner.scope());
-
         inner
             .map(|triple| (triple.2, (triple.0, triple.1)))
             .join(&sco_only_in.map(|triple| (triple.0, (triple.1, triple.2))))
@@ -137,16 +115,13 @@ where
     })
 }
 
-/// Fourth rule: T(x, p, y) <= T(p1, SPO, p),T(x, p1, y)
-pub fn rule_4<G>(
-    data_collection: &Collection<G, EncodedTriple>,
-    spo_value: u32,
-) -> Collection<G, EncodedTriple>
+/// Seventh rule: [x, b, y] <= [a, SPO, b], [x, a, y]
+pub fn rule_7<G>(data_collection: &Collection<G, EncodedTriple>) -> Collection<G, EncodedTriple>
 where
     G: Scope,
     G::Timestamp: Lattice,
 {
-    let spo_only_out = data_collection.filter(move |triple| triple.1 == spo_value);
+    let spo_only_out = data_collection.filter(move |triple| triple.1 == 1);
 
     let candidates = data_collection
         .map(|triple| ((triple.1, triple)))
@@ -164,17 +139,14 @@ where
     })
 }
 
-/// Fifth rule: T(a, TYPE, D) <= T(p, DOMAIN, D),T(a, p, b)
-pub fn rule_5<G>(
-    data_collection: &Collection<G, EncodedTriple>,
-    domain_value: u32,
-    type_value: u32,
-) -> Collection<G, EncodedTriple>
+/// Second rule: [y, TYPE, x] <= [a, DOMAIN, x],[y, a, z]
+pub fn rule_2<G>(data_collection: &Collection<G, EncodedTriple>) -> Collection<G, EncodedTriple>
 where
     G: Scope,
     G::Timestamp: Lattice,
 {
-    let only_domain = data_collection.filter(move |triple| triple.1 == domain_value);
+    /// 2 = DOMAIN
+    let only_domain = data_collection.filter(move |triple| triple.1 == 2);
 
     let candidates = data_collection
         .map(|triple| (triple.1, triple))
@@ -184,20 +156,17 @@ where
     candidates
         .map(|triple| (triple.1, (triple.0, triple.2)))
         .join(&only_domain.map(|triple| (triple.0, (triple.1, triple.2))))
-        .map(move |(_key, ((a, _b), (_dom, d)))| (a, type_value, d))
+        .map(move |(_key, ((a, _b), (_dom, d)))| (a, 4, d))
 }
 
-/// Sixth rule: T(b, TYPE, R) <= T(p, RANGE, R),T(a, p, b)
-pub fn rule_6<G, V>(
-    data_collection: &Collection<G, EncodedTriple>,
-    range_value: u32,
-    type_value: u32,
-) -> Collection<G, EncodedTriple>
+/// Third rule: [z, TYPE, x) <= [a, RANGE, x),[y, a, z)
+pub fn rule_3<G>(data_collection: &Collection<G, EncodedTriple>) -> Collection<G, EncodedTriple>
 where
     G: Scope,
     G::Timestamp: Lattice,
 {
-    let only_range = data_collection.filter(move |triple| triple.1 == range_value);
+    /// 3 = RANGE
+    let only_range = data_collection.filter(move |triple| triple.1 == 3);
 
     let candidates = data_collection
         .map(|triple| ((triple.1, triple)))
@@ -207,5 +176,46 @@ where
     candidates
         .map(|triple| (triple.1, (triple.0, triple.2)))
         .join(&only_range.map(|triple| (triple.0, (triple.1, triple.2))))
-        .map(move |(_key, ((_a, b), (_ran, r)))| (b, type_value, r))
+        .map(move |(_key, ((_a, b), (_ran, r)))| (b, 4, r))
+}
+
+/// Standard rule application
+pub fn materialize<G>(
+    input_stream: &Collection<G, (usize, usize, usize)>,
+) -> Collection<G, (usize, usize, usize)>
+where
+    G::Timestamp: Lattice,
+    G: Scope,
+{
+    let sco_transitive_closure = rule_11(&input_stream);
+
+    let spo_transitive_closure = rule_5(&input_stream);
+
+    let input_stream = input_stream
+        .concat(&sco_transitive_closure)
+        .concat(&spo_transitive_closure);
+
+    let input_stream = trans_property_rule(&input_stream).concat(&input_stream);
+
+    let input_stream = inverseof_rule(&input_stream).concat(&input_stream);
+
+    let spo_type_rule = rule_7(&input_stream);
+
+    let input_stream = input_stream.concat(&spo_type_rule).distinct();
+
+    let input_stream = inverseof_rule(&input_stream).concat(&input_stream);
+
+    let domain_type_rule = rule_2(&input_stream);
+
+    let input_stream = input_stream.concat(&domain_type_rule);
+
+    let range_type_rule = rule_3(&input_stream);
+
+    let input_stream = input_stream.concat(&range_type_rule);
+
+    let sco_type_rule = rule_9(&input_stream);
+
+    let input_stream = input_stream.concat(&sco_type_rule).distinct();
+
+    input_stream
 }
