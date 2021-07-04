@@ -2,20 +2,22 @@
 
 mod utils;
 
-use std::u32;
-
 use differential_dataflow::input::Input;
 use differential_dataflow::operators::arrange::ArrangeByKey;
-use differential_dataflow::operators::arrange::ArrangeBySelf;
-use differential_dataflow::operators::CountTotal;
+use differential_dataflow::operators::Consolidate;
 use differential_dataflow::operators::Iterate;
-use differential_dataflow::operators::Join;
 use differential_dataflow::operators::JoinCore;
 use differential_dataflow::operators::Threshold;
+
+use differential_dataflow::operators::arrange::ArrangeBySelf;
+use differential_dataflow::trace::cursor::CursorDebug;
+use differential_dataflow::trace::TraceReader;
 use lasso::{Key, Rodeo, Spur};
 use rdfs_materialization::load_encode_triples::{load3enc, load3nt};
 use rdfs_materialization::rdfs_materialization::*;
-use timely::dataflow::operators::Map;
+use timely::dataflow::operators::probe::Handle;
+use timely::dataflow::operators::Probe;
+use timely::progress::frontier::AntichainRef;
 
 #[test]
 fn loading_triples() {
@@ -90,57 +92,103 @@ fn loading_encoding_inserting_triples() {
     rodeo.get_or_intern(OWL_TRANSITIVE_PROPERTY);
     rodeo.get_or_intern(OWL_INVERSE_OF);
 
-    timely::execute_directly(move |worker| {
-        let (mut tbox_input_stream, mut abox_input_stream) = worker.dataflow::<(), _, _>(|outer| {
-            let (mut _abox_in, mut abox) = outer.new_collection::<(usize, usize, usize), isize>();
-            let (mut _tbox_in, mut tbox) = outer.new_collection::<(usize, usize, usize), isize>();
+    let (mut tbox_summaries, mut abox_summaries) = timely::execute_directly(move |worker| {
+        let mut tbox_probe = Handle::new();
+        let mut abox_probe = Handle::new();
+        let (mut tbox_input_stream, mut abox_input_stream, mut tbox_trace, mut abox_trace) = worker
+            .dataflow::<usize, _, _>(|outer| {
+                let (mut _abox_in, mut abox) =
+                    outer.new_collection::<(usize, usize, usize), isize>();
+                let (mut _tbox_in, mut tbox) =
+                    outer.new_collection::<(usize, usize, usize), isize>();
 
-            // our tbox has very little data so this part really doesnt matter much
+                // tbox reasoning
 
-            let sco = rule_11(&tbox);
-            let spo = rule_5(&tbox);
-            let tbox = tbox.concat(&sco).concat(&spo);
+                let sco = rule_11(&tbox);
+                let spo = rule_5(&tbox);
+                let tbox = tbox.concat(&sco).concat(&spo).distinct();
 
-            let tbox_by_s = tbox.map(|(s, p, o)| (s, (p, o))).arrange_by_key();
-            let sco_assertions = tbox_by_s.filter(|s, (p, o)| p == &0usize);
-            let spo_assertions = tbox_by_s.filter(|s, (p, o)| p == &1usize);
+                // indexing the tbox
+                let tbox_by_s = tbox.map(|(s, p, o)| (s, (p, o))).arrange_by_key();
 
-            let abox_by_o = abox.map(|(s, p, o)| (o, (s, p)));
-            let abox_by_p = abox.map(|(s, p, o)| (p, (s, o)));
+                let tbox_trace = tbox_by_s.trace.clone();
 
-            let type_assertions = abox_by_o.filter(|(o, (s, p))| p == &4usize);
-            //.inspect(|x| println!("Type assertion: {:?}", x));
+                tbox_by_s
+                    .as_collection(|_, v| *v)
+                    .consolidate()
+                    //.inspect(move |x| println!("{:?}", x))
+                    .probe_with(&mut tbox_probe);
 
-            let sco_type = type_assertions
-                .iterate(|inner| {
-                    let arr = inner.arrange_by_key();
-                    let tbox_in = sco_assertions.enter(&inner.scope());
+                let sco_assertions = tbox_by_s.filter(|s, (p, o)| p == &0usize);
+                let spo_assertions = tbox_by_s.filter(|s, (p, o)| p == &1usize);
+                let domain_assertions = tbox_by_s.filter(|s, (p, o)| p == &2usize);
+                let range_assertions = tbox_by_s.filter(|s, (p, o)| p == &3usize);
+                //let transitivity_assertions = tbox_by_s.filter(|s, (p, o)| p == &4usize);
+                //let inverseof_assertions = tbox_by_s.filter(|s, (p, o)| p == &5usize);
 
-                    tbox_in
-                        .join_core(&arr, |key, &(sco, y), &(z, type_)| Some((y, (z, type_))))
-                        .concat(inner)
-                        .distinct()
-                })
-                .map(|(y, (z, type_))| (z, type_, y))
-                .inspect(|x| println!("SCO Type inference: {:?}", x));
+                // preparing the abox
 
-            let spo_type = abox_by_p
-                .iterate(|inner| {
-                    let arr = inner.arrange_by_key();
-                    let tbox_in = spo_assertions.enter(&inner.scope());
+                let abox_by_o = abox.map(|(s, p, o)| (o, (s, p)));
+                let abox_by_p = abox.map(|(s, p, o)| (p, (s, o)));
 
-                    tbox_in
-                        .join_core(&arr, |key, &(spo, b), &(x, y)| Some((b, (x, y))))
-                        .concat(inner)
-                        .distinct()
-                })
-                .map(|(b, (x, y))| (x, b, y))
-                .inspect(|x| println!("SPO Type inference: {:?}", x));
+                let type_assertions = abox_by_o.filter(|(o, (s, p))| p == &4usize);
 
-            let abox = abox.concat(&sco_type).concat(&spo_type).distinct();
+                // abox reasoning
+                let sco_type = type_assertions
+                    .iterate(|inner| {
+                        let arr = inner.arrange_by_key();
+                        let tbox_in = sco_assertions.enter(&inner.scope());
 
-            (_tbox_in, _abox_in)
-        });
+                        tbox_in
+                            .join_core(&arr, |key, &(sco, y), &(z, type_)| Some((y, (z, type_))))
+                            .concat(inner)
+                            .distinct()
+                    })
+                    .map(|(y, (z, type_))| (z, type_, y))
+                    .inspect(|x| println!("SCO Type inference: {:?}", x));
+
+                let spo_type = abox_by_p
+                    .iterate(|inner| {
+                        let arr = inner.arrange_by_key();
+                        let tbox_in = spo_assertions.enter(&inner.scope());
+
+                        tbox_in
+                            .join_core(&arr, |key, &(spo, b), &(x, y)| Some((b, (x, y))))
+                            .concat(inner)
+                            .distinct()
+                    })
+                    .map(|(b, (x, y))| (x, b, y))
+                    .inspect(|x| println!("SPO Type inference: {:?}", x));
+
+                abox = abox.concat(&sco_type).concat(&spo_type).distinct();
+
+                let abox_by_p = abox.map(|(s, p, o)| (p, (s, o))).arrange_by_key();
+
+                let domain_type = domain_assertions
+                    .join_core(&abox_by_p, |a, &(domain, x), &(y, z)| Some((y, 4usize, x)))
+                    .inspect(|x| println!("DOMAIN Type inference: {:?}", x));
+
+                let range_type = range_assertions
+                    .join_core(&abox_by_p, |a, &(range, x), &(y, z)| Some((z, 4usize, x)))
+                    .inspect(|x| println!("RANGE Type inference: {:?}", x));
+
+                abox = abox.concat(&domain_type).concat(&range_type).distinct();
+
+                let abox_by_s = abox.arrange_by_self();
+
+                let abox_trace = abox_by_s.trace.clone();
+
+                abox_by_s
+                    .as_collection(|_, v| *v)
+                    .consolidate()
+                    //.inspect(move |x| println!("{:?}", x))
+                    .probe_with(&mut abox_probe);
+
+                /*abox
+                .probe_with(&mut probe);*/
+
+                (_tbox_in, _abox_in, tbox_trace, abox_trace)
+            });
 
         tbox_triples.for_each(|triple| {
             let s = &triple.0[..];
@@ -157,7 +205,9 @@ fn loading_encoding_inserting_triples() {
 
             tbox_input_stream.insert((key_s_int, key_p_int, key_o_int));
         });
+        tbox_input_stream.advance_to(1);
         tbox_input_stream.flush();
+        worker.step_while(|| tbox_probe.less_than(tbox_input_stream.time()));
 
         abox_triples.for_each(|triple| {
             let s = &triple.0[..];
@@ -174,6 +224,26 @@ fn loading_encoding_inserting_triples() {
 
             abox_input_stream.insert((key_s_int, key_p_int, key_o_int));
         });
+
+        abox_input_stream.advance_to(1);
         abox_input_stream.flush();
+        worker.step_while(|| abox_probe.less_than(abox_input_stream.time()));
+        worker.step();
+
+        let (mut tbox_cursor, tbox_storage) = tbox_trace.cursor();
+        let (mut abox_cursor, abox_storage) = abox_trace.cursor();
+
+        (
+            tbox_cursor.to_vec(&tbox_storage),
+            abox_cursor.to_vec(&abox_storage),
+        )
     });
+
+    for summary in tbox_summaries.drain(..) {
+        println!("Tbox entry: {:?}", summary)
+    }
+
+    for summary in abox_summaries.drain(..) {
+        println!("Abox entry: {:?}", summary)
+    }
 }

@@ -160,7 +160,7 @@ where
         .map(move |(_key, ((a, _b), (_dom, d)))| (a, 4, d))
 }
 
-/// Third rule: [z, TYPE, x) <= [a, RANGE, x),[y, a, z)
+/// Third rule: [z, TYPE, x] <= [a, RANGE, x], [y, a, z]
 pub fn rule_3<G>(data_collection: &Collection<G, EncodedTriple>) -> Collection<G, EncodedTriple>
 where
     G: Scope,
