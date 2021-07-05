@@ -9,5 +9,5 @@ All of `rhoDF` + `owl:inverseOf` + `owl:TransitiveProperty`.
 How to run:
 
 ```
-cargo run --release -- -w2
+cargo run --release -- -w8
 ```
