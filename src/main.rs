@@ -36,17 +36,20 @@ fn main() {
         let tbox_probe = Handle::new();
         let abox_probe = Handle::new();
 
+        /*
+
         if let Ok(addr) = env::var("DIFFERENTIAL_LOG_ADDR") {
-            if !addr.is_empty() {
-                if let Ok(stream) = TcpStream::connect(&addr) {
-                    differential_dataflow::logging::enable(worker, stream);
-                }
+                if !addr.is_empty() {
+            if let Ok(stream) = TcpStream::connect(&addr) {
+                differential_dataflow::logging::enable(worker, stream);
+                    }
             } else {
-                panic!("Could not connect to differential log address: {:?}", addr);
+                    panic!("Could not connect to differential log address: {:?}", addr);
             }
-        } else {
+            } else {
             println!("Failed to connect to diff logs")
         }
+        */
 
         let (mut tbox_input_stream, mut abox_input_stream) =
             worker.dataflow::<usize, _, _>(|outer| {
@@ -68,38 +71,13 @@ fn main() {
                 //let transitivity_assertions = tbox_by_s.filter(|s, (p, o)| p == &4usize);
                 //let inverseof_assertions = tbox_by_s.filter(|s, (p, o)| p == &5usize);
 
-                // preparing the abox
+                let type_assertions = abox
+                    .map(|(s, p, o)| (o, (s, p)))
+                    .filter(|(o, (s, p))| p == &4usize);
 
-                let abox_by_o = abox.map(|(s, p, o)| (o, (s, p)));
-                let abox_by_p = abox.map(|(s, p, o)| (p, (s, o)));
-
-                let type_assertions = abox_by_o.filter(|(o, (s, p))| p == &4usize);
-                let not_type_assertions = abox_by_p.filter(|(p, (s, o))| p != &4usize);
-
-                // abox reasoning
-                /*
-                let sco_type = type_assertions
-                .iterate(|inner| {
-                    let arr = inner.arrange_by_key();
-                    let tbox_in = sco_assertions.enter(&inner.scope());
-
-                    tbox_in
-                    .join_core(&arr, |key, &(sco, y), &(z, type_)| Some((y, (z, type_))))
-                    .concat(inner)
-                    .distinct()
-                });
-
-                let spo_type = abox_by_p
-                .iterate(|inner| {
-                    let arr = inner.arrange_by_key();
-                    let tbox_in = spo_assertions.enter(&inner.scope());
-
-                    tbox_in
-                    .join_core(&arr, |key, &(spo, b), &(x, y)| Some((b, (x, y))))
-                    .concat(inner)
-                    .distinct()
-                });
-                 */
+                let not_type_assertions_by_p = abox
+                    .map(|(s, p, o)| (p, (s, o)))
+                    .filter(|(p, (s, o))| p != &4usize);
 
                 let (sco_type, spo_type) = outer.iterative::<usize, _, _>(|inner| {
                     let sco_var =
@@ -130,7 +108,7 @@ fn main() {
                             .concatenate(vec![sco_iter_step]),
                     );
                     spo_var.set(
-                        &not_type_assertions
+                        &not_type_assertions_by_p
                             .enter(inner)
                             .concatenate(vec![spo_iter_step]),
                     );
@@ -138,21 +116,40 @@ fn main() {
                     (sco_new.leave(), spo_new.leave())
                 });
 
-                abox = sco_type
-                    .concat(&spo_type)
-                    .map(|(b, (x, y))| (x, b, y))
-                    .concat(&abox)
-                    .consolidate();
+                let not_type_assertions_by_p =
+                    spo_type.concat(&not_type_assertions_by_p).consolidate();
 
-                let abox_by_p = abox.map(|(s, p, o)| (p, (s, o))).arrange_by_key();
+                let not_type_assertions_by_p_arr = not_type_assertions_by_p.arrange_by_key();
+
+                /*
+                abox = sco_type
+                .concat(&spo_type)
+                .map(|(b, (x, y))| (x, b, y))
+                .concat(&abox)
+                .consolidate();
+
+                let abox_by_p = abox
+                .map(|(s, p, o)| (p, (s, o)))
+                .arrange_by_key();
+                */
 
                 let domain_type = domain_assertions
-                    .join_core(&abox_by_p, |a, &(domain, x), &(y, z)| Some((y, 4usize, x)));
+                    .join_core(&not_type_assertions_by_p_arr, |a, &(domain, x), &(y, z)| {
+                        Some((y, 4usize, x))
+                    });
 
                 let range_type = range_assertions
-                    .join_core(&abox_by_p, |a, &(range, x), &(y, z)| Some((z, 4usize, x)));
+                    .join_core(&not_type_assertions_by_p_arr, |a, &(range, x), &(y, z)| {
+                        Some((z, 4usize, x))
+                    });
 
-                abox = abox.concat(&domain_type).concat(&range_type).consolidate();
+                abox = type_assertions
+                    .concat(&sco_type)
+                    .concat(&not_type_assertions_by_p)
+                    .map(|(y, (z, type_))| (z, type_, y))
+                    .concat(&domain_type)
+                    .concat(&range_type)
+                    .consolidate();
 
                 (_tbox_in, _abox_in)
             });
