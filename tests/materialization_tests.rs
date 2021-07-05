@@ -12,18 +12,22 @@ use differential_dataflow::operators::Iterate;
 use differential_dataflow::operators::Threshold;
 
 use differential_dataflow::operators::arrange::ArrangeBySelf;
+use differential_dataflow::operators::iterate;
 use differential_dataflow::trace::TraceReader;
 use differential_dataflow::trace::cursor::CursorDebug;
 use lasso::{Key, Rodeo, Spur};
 use rdfs_materialization::load_encode_triples::{load3enc, load3nt};
 use rdfs_materialization::rdfs_materialization::*;
+use timely::dataflow::Scope;
 use timely::dataflow::operators::Probe;
+use timely::dataflow::operators::flow_controlled::iterator_source;
 use timely::dataflow::operators::probe::Handle;
+use timely::order::Product;
 use timely::progress::frontier::AntichainRef;
 
 #[test]
 fn loading_triples() {
-    let triples = load3nt(0, "./tests/data/", "tiny_abox.nt");
+    let triples = load3nt("./tests/data/", "tiny_abox.nt");
 
     let mut length = 0;
 
@@ -36,7 +40,7 @@ fn loading_triples() {
 
 #[test]
 fn loading_encoding_triples() {
-    let triples = load3nt(0, "./tests/data/", "tiny_abox.nt");
+    let triples = load3nt("./tests/data/", "tiny_abox.nt");
     let mut rodeo = Rodeo::default();
 
     let mut length = 0;
@@ -62,8 +66,8 @@ fn loading_encoding_triples() {
 
 #[test]
 fn loading_encoding_inserting_triples() {
-    let abox_triples = load3nt(0, "./tests/data/", "tiny_abox.nt");
-    let tbox_triples = load3nt(0, "./tests/data/", "full_tbox.nt");
+    let abox_triples = load3nt("./tests/data/", "tiny_abox.nt");
+    let tbox_triples = load3nt("./tests/data/", "tbox.nt");
     let mut rodeo = Rodeo::default();
 
     /// URI of the rdfs:subClassOf
@@ -109,7 +113,7 @@ fn loading_encoding_inserting_triples() {
 	    let tbox = tbox
 		.concat(&sco)
 		.concat(&spo)
-		.distinct();
+		.consolidate();
 
 	    // indexing the tbox
 	    let tbox_by_s = tbox
@@ -137,55 +141,83 @@ fn loading_encoding_inserting_triples() {
 	    let abox_by_p = abox.map(|(s, p, o)|(p, (s, o)));
 	    
 	    let type_assertions = abox_by_o.filter(|(o, (s, p))| p == &4usize);
+	    let not_type_assertions = abox_by_p.filter(|(p, (s, o))| p != &4usize);
+
+	    let (sco_type, spo_type) = outer.iterative::<usize,_,_>(|inner| {
+
+		let sco_var = iterate::SemigroupVariable::new(inner, Product::new(Default::default(), 1));
+		let spo_var = iterate::SemigroupVariable::new(inner, Product::new(Default::default(), 1));
+
+		let sco_new = sco_var.distinct();
+		let spo_new = spo_var.distinct();
+
+		let sco_arr = sco_new.arrange_by_key();
+		let spo_arr = spo_new.arrange_by_key();
+
+		let sco_ass = sco_assertions.enter(inner);
+		let spo_ass = spo_assertions.enter(inner);
+
+		let sco_iter_step = sco_ass
+		    .join_core(&sco_arr, |key, &(sco, y), &(z, type_)| Some((y, (z, type_))));
+
+		let spo_iter_step = spo_ass
+		    .join_core(&spo_arr, |key, &(spo, b), &(x, y)| Some((b, (x, y))));
+
+		sco_var.set(&type_assertions.enter(inner).concatenate(vec![sco_iter_step]));
+		spo_var.set(&not_type_assertions.enter(inner).concatenate(vec![spo_iter_step]));
+
+		(sco_new.leave(), spo_new.leave())
+		
+	    });
 
 	    // abox reasoning
-	    let sco_type = type_assertions
-		.iterate(|inner| {
-		    let arr = inner.arrange_by_key();
-		    let tbox_in = sco_assertions.enter(&inner.scope());
+	    // let sco_type = type_assertions
+	    // 	.iterate(|inner| {
+	    // 	    let arr = inner.arrange_by_key();
+	    // 	    let tbox_in = sco_assertions.enter(&inner.scope());
 		    
-		    tbox_in
-			.join_core(&arr, |key, &(sco, y), &(z, type_)| Some((y, (z, type_))))
-			.concat(inner)
-			.distinct()
-		})
-		.map(|(y, (z, type_))| (z, type_, y))
-		.inspect(|x| println!("SCO Type inference: {:?}", x));
+	    // 	    tbox_in
+	    // 		.join_core(&arr, |key, &(sco, y), &(z, type_)| Some((y, (z, type_))))
+	    // 		.concat(inner)
+	    // 		.distinct()
+	    // 	})
+	    // 	.map(|(y, (z, type_))| (z, type_, y));
+	    // 	//.inspect(|x| println!("SCO Type inference: {:?}", x));
 
-	    let spo_type = abox_by_p
-		.iterate(|inner| {
-		    let arr = inner.arrange_by_key();
-		    let tbox_in = spo_assertions.enter(&inner.scope());
+	    // let spo_type = abox_by_p
+	    // 	.iterate(|inner| {
+	    // 	    let arr = inner.arrange_by_key();
+	    // 	    let tbox_in = spo_assertions.enter(&inner.scope());
 
-		    tbox_in
-			.join_core(&arr, |key, &(spo, b), &(x, y)| Some((b, (x, y))))
-			.concat(inner)
-			.distinct()
-		})
-		.map(|(b, (x, y))| (x, b, y))
-		.inspect(|x| println!("SPO Type inference: {:?}", x));
-
+	    // 	    tbox_in
+	    // 		.join_core(&arr, |key, &(spo, b), &(x, y)| Some((b, (x, y))))
+	    // 		.concat(inner)
+	    // 		.distinct()
+	    // 	})
+	    // 	.map(|(b, (x, y))| (x, b, y));
+	    // 	//.inspect(|x| println!("SPO Type inference: {:?}", x));
+	    
 	    abox = abox
-		.concat(&sco_type)
-		.concat(&spo_type)
-		.distinct();
+		.concat(&sco_type.map(|(y, (z, type_))| (z, type_, y)))
+		.concat(&spo_type.map(|(b, (x, y))| (x, b, y)))
+		.consolidate();
 
 	    let abox_by_p = abox
 		.map(|(s, p, o)| (p, (s, o)))
 		.arrange_by_key();
 
 	    let domain_type = domain_assertions
-		.join_core(&abox_by_p, |a, &(domain, x), &(y, z)| Some((y, 4usize, x)))
-		.inspect(|x| println!("DOMAIN Type inference: {:?}", x));
+		.join_core(&abox_by_p, |a, &(domain, x), &(y, z)| Some((y, 4usize, x)));
+		//.inspect(|x| println!("DOMAIN Type inference: {:?}", x));
 
 	    let range_type = range_assertions
-		.join_core(&abox_by_p, |a, &(range, x), &(y, z)| Some((z, 4usize, x)))
-		.inspect(|x| println!("RANGE Type inference: {:?}", x));
+		.join_core(&abox_by_p, |a, &(range, x), &(y, z)| Some((z, 4usize, x)));
+		//.inspect(|x| println!("RANGE Type inference: {:?}", x));
 		
 	    abox = abox
 		.concat(&domain_type)
 		.concat(&range_type)
-		.distinct();
+		.consolidate();
 
 	    let abox_by_s = abox.arrange_by_self();
 
@@ -196,12 +228,6 @@ fn loading_encoding_inserting_triples() {
                 .consolidate()
                 //.inspect(move |x| println!("{:?}", x))
                 .probe_with(&mut abox_probe);
-	    
-
-	    /*abox
-		.probe_with(&mut probe);*/
-
-	    
 	    
             (_tbox_in, _abox_in, tbox_trace, abox_trace)
         });
@@ -250,14 +276,21 @@ fn loading_encoding_inserting_triples() {
 	
     });
 
-    for summary in tbox_summaries.drain(..) {
+    let tbox_size = tbox_summaries.len();
 
-	println!("Tbox entry: {:?}", summary)
+    let abox_size = abox_summaries.len();
+
+    // This is the amount of materialized tuples that RDFox got with the same set of rules
+    assert_eq!(tbox_size + abox_size, 331)
+
+    // for summary in tbox_summaries.drain(..) {
+
+    // 	println!("Tbox entry: {:?}", summary)
 	
-    }
+    // }
 
-    for summary in abox_summaries.drain(..) {
-	println!("Abox entry: {:?}", summary)
-    }
+    // for summary in abox_summaries.drain(..) {
+    // 	println!("Abox entry: {:?}", summary)
+    // }
     
 }

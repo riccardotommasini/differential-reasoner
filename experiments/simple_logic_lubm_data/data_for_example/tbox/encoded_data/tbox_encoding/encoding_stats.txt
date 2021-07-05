@@ -1,5 +1,0 @@
-Encoding Time (ms)
-16
-7
-10
-10
