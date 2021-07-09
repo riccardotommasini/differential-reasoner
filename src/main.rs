@@ -11,6 +11,7 @@ use differential_dataflow::operators::Threshold;
 use differential_dataflow::operators::arrange::ArrangeBySelf;
 use differential_dataflow::operators::iterate;
 use differential_dataflow::trace::TraceReader;
+use differential_dataflow::operators::ThresholdTotal;
 use differential_dataflow::trace::cursor::CursorDebug;
 use lasso::{Key, Rodeo, Spur};
 use rdfs_materialization::load_encode_triples::{load3enc, load3nt};
@@ -24,37 +25,31 @@ fn main() {
 
     let outer_timer = ::std::time::Instant::now();
     timely::execute_from_args(std::env::args(), move |worker| {
+	
 	let timer = worker.timer();
 	let index = worker.index();
 	let peers = worker.peers();
-	let prefix = String::from("lubm50_split");
+
+	let part1_data = String::from("part1-lubm50_split");
+	let part2_data = String::from("part2-lubm50_split");
+	let part3_data = String::from("part3-lubm50_split");
 	let index_as_string = index.to_string();
 	let suffix = String::from(".ntenc");
-	let blerp = [prefix, index_as_string, suffix].join("");
-	let abox_triples = load3enc("./tests/data/", &blerp[..]);
+	
+	let first90 = [part1_data, index_as_string.clone(), suffix.clone()].join("");
+	let first90_triples = load3enc("./tests/data/update_data/", &first90);
+	let next9 = [part2_data, index_as_string.clone(), suffix.clone()].join("");
+	let next9_triples = load3enc("./tests/data/update_data/", &next9);
+	let next1 =  [part3_data, index_as_string.clone(), suffix.clone()].join("");
+	let next1_triples = load3enc("./tests/data/update_data/", &next1);
 	let tbox_triples = load3enc("./tests/data/", "tbox.ntenc");
 
 	let tbox_probe = Handle::new();
 	let abox_probe = Handle::new();
 
-	/*
-	
-	if let Ok(addr) = env::var("DIFFERENTIAL_LOG_ADDR") {
-            if !addr.is_empty() {
-		if let Ok(stream) = TcpStream::connect(&addr) {
-		    differential_dataflow::logging::enable(worker, stream);
-                }
-	    } else {
-                panic!("Could not connect to differential log address: {:?}", addr);
-	    }
-        } else {
-	    println!("Failed to connect to diff logs")
-	}
-	*/
-	
-	
         let (mut tbox_input_stream, mut abox_input_stream) = worker.dataflow::<usize, _, _>(|outer| {
-	    
+
+	    // Here we are creating the actual stream inputs
             let (mut _abox_in, mut abox) = outer
 		.new_collection::<(usize, usize, usize), isize>();
             let (mut _tbox_in, mut tbox) = outer
@@ -79,8 +74,8 @@ fn main() {
 		.filter(|s, (p, o)| p == &2usize);
 	    let range_assertions = tbox_by_s
 		.filter(|s, (p, o)| p == &3usize);
-	    //let transitivity_assertions = tbox_by_s.filter(|s, (p, o)| p == &4usize);
-	    //let inverseof_assertions = tbox_by_s.filter(|s, (p, o)| p == &5usize);
+
+	    // Start of abox reasoning.
 	    
 	    let type_assertions = abox
 		.map(|(s, p, o)|(o, (s, p)))
@@ -89,9 +84,9 @@ fn main() {
 	    let not_type_assertions_by_p = abox
 		.map(|(s, p, o)|(p, (s, o)))
 		.filter(|(p, (s, o))| p != &4usize);
- 
-	    let (sco_type, spo_type) = outer.iterative::<usize,_,_>(|inner| {
 
+	    let (sco_type, spo_type) = outer.iterative::<usize,_,_>(|inner| {
+		
 		let sco_var = iterate::SemigroupVariable::new(inner, Product::new(Default::default(), 1));
 		let spo_var = iterate::SemigroupVariable::new(inner, Product::new(Default::default(), 1));
 
@@ -115,9 +110,9 @@ fn main() {
 
 		let spo_iter_step = spo_ass
 		    .join_core(&spo_arr, |key, &(spo, b), &(x, y)| Some((b, (x, y))));
-
-		sco_var.set(&type_assertions.enter(inner).concatenate(vec![sco_iter_step]));
-		spo_var.set(&not_type_assertions_by_p.enter(inner).concatenate(vec![spo_iter_step]));
+		
+		sco_var.set(&type_assertions.enter(inner).concat(&sco_iter_step));
+		spo_var.set(&not_type_assertions_by_p.enter(inner).concat(&spo_iter_step));
 
 		(sco_new.leave(), spo_new.leave())
 		
@@ -129,18 +124,6 @@ fn main() {
 
 	    let not_type_assertions_by_p_arr = not_type_assertions_by_p
 		.arrange_by_key();
-
-	    /*
-	    abox = sco_type
-		.concat(&spo_type)
-		.map(|(b, (x, y))| (x, b, y))
-		.concat(&abox)
-		.consolidate();
-
-	    let abox_by_p = abox
-		.map(|(s, p, o)| (p, (s, o)))
-		.arrange_by_key();
-	    */
 
 	    let domain_type = domain_assertions
 		.join_core(&not_type_assertions_by_p_arr, |a, &(domain, x), &(y, z)| Some((y, 4usize, x)));
@@ -159,20 +142,48 @@ fn main() {
             (_tbox_in, _abox_in)
         });
 
-	if worker.index() == 0 {
+	// Tbox
+	if 0 == worker.index() {
 	    tbox_triples.
 		for_each(|triple| {
 		    tbox_input_stream.insert((triple.0, triple.1, triple.2)); });
 	}
         tbox_input_stream.advance_to(1); tbox_input_stream.flush();
 	worker.step_while(|| tbox_probe.less_than(tbox_input_stream.time()));
-	abox_triples
+
+	// First 90
+	
+	first90_triples
 	    .for_each(|triple| {
 		abox_input_stream.insert((triple.0, triple.1, triple.2));
         });
         abox_input_stream.advance_to(1); abox_input_stream.flush();
 	worker.step_while(|| abox_probe.less_than(abox_input_stream.time()));
-	println!("abox reasoning finished; elapsed: {:?} at {:?}", timer.elapsed(), index);
+	println!("abox materialization finished, first 90%; elapsed: {:?} at {:?}", timer.elapsed(), index);
+
+	next9_triples
+	    .for_each(|triple| {
+		abox_input_stream.insert((triple.0, triple.1, triple.2));
+        });
+        abox_input_stream.advance_to(2); abox_input_stream.flush();
+	worker.step_while(|| abox_probe.less_than(abox_input_stream.time()));
+	println!("abox materialization finished, next 9%; elapsed: {:?} at {:?}", timer.elapsed(), index);
+
+	next1_triples
+	    .for_each(|triple| {
+		abox_input_stream.insert((triple.0, triple.1, triple.2));
+        });
+        abox_input_stream.advance_to(3); abox_input_stream.flush();
+	worker.step_while(|| abox_probe.less_than(abox_input_stream.time()));
+	println!("abox materialization finished, next 1%; elapsed: {:?} at {:?}", timer.elapsed(), index);
+	
+	// Updates
+	// abox_triples
+	//     .for_each(|triple| {
+	// 	abox_input_stream.insert((triple.0, triple.1, triple.2));
+        // });
+        // abox_input_stream.advance_to(2); abox_input_stream.flush();
+	// worker.step_while(|| abox_probe.less_than(abox_input_stream.time()));
 	
     });
 

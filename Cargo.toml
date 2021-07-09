@@ -1,7 +1,7 @@
 [package]
 name = "rdfs-materialization"
 version = "0.2.0"
-authors = ["jimmy_hypi <xhimi.hypi@gmail.com>", "bruno_rucy <brurucy@gmail.com>"]
+authors = ["bruno_rucy <brurucy@gmail.com>"]
 edition = "2018"
 
 [dependencies]
