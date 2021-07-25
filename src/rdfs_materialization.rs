@@ -72,7 +72,6 @@ where
     G: Scope,
     G::Timestamp: Lattice,
 {
-    /// 0 = SCO
     data_collection
 	.filter(move |(s, p, o)| p == &0usize)
         .iterate(|inner| efficient_transitivity(inner))
@@ -84,138 +83,7 @@ where
     G: Scope,
     G::Timestamp: Lattice,
 {
-    /// 1 = SPO
     data_collection
         .filter(move |(s, p, o)| p == &1usize)
         .iterate(|inner| efficient_transitivity(inner))
-}
-
-/// Ninth rule: [z, TYPE, y] <= [x, SCO, y], [z, TYPE, x]
-pub fn rule_9<G>(data_collection: &Collection<G, EncodedTriple>) -> Collection<G, EncodedTriple>
-where
-    G: Scope,
-    G::Timestamp: Lattice,
-{
-    let sco_only = data_collection.filter(move |triple| triple.1 == 0);
-    /// 4 = TYPE
-    let candidates = data_collection
-        .filter(move |triple| triple.1 == 4)
-        .map(|triple| (triple.2.clone(), (triple)))
-        .join(&sco_only.map(|triple| (triple.0, ())))
-        .map(|(_key, (triple, ()))| triple);
-
-    candidates.iterate(|inner| {
-        let sco_only_in = sco_only.enter(&inner.scope());
-        inner
-            .map(|triple| (triple.2, (triple.0, triple.1)))
-            .join(&sco_only_in.map(|triple| (triple.0, (triple.1, triple.2))))
-            .map(|(_key, ((x, typ), (_sco, b)))| (x, typ, b))
-            .concat(&inner)
-            .distinct()
-    })
-}
-
-/// Seventh rule: [x, b, y] <= [a, SPO, b], [x, a, y]
-pub fn rule_7<G>(data_collection: &Collection<G, EncodedTriple>) -> Collection<G, EncodedTriple>
-where
-    G: Scope,
-    G::Timestamp: Lattice,
-{
-    let spo_only_out = data_collection.filter(move |triple| triple.1 == 1);
-
-    let candidates = data_collection
-        .map(|triple| ((triple.1, triple)))
-        .join(&spo_only_out.map(|triple| ((triple.0), ())))
-        .map(|(_, (triple, ()))| triple);
-
-    candidates.iterate(|inner| {
-        let spo_only = spo_only_out.enter(&inner.scope());
-        inner
-            .map(|triple| (triple.1, (triple.0, triple.2)))
-            .join(&spo_only.map(|triple| (triple.0, (triple.1, triple.2))))
-            .map(|(_key, ((x, y), (_spo, p)))| (x, p, y))
-            .concat(&inner)
-            .distinct()
-    })
-}
-
-/// Second rule: [y, TYPE, x] <= [a, DOMAIN, x],[y, a, z]
-pub fn rule_2<G>(data_collection: &Collection<G, EncodedTriple>) -> Collection<G, EncodedTriple>
-where
-    G: Scope,
-    G::Timestamp: Lattice,
-{
-    /// 2 = DOMAIN
-    let only_domain = data_collection.filter(move |triple| triple.1 == 2);
-
-    let candidates = data_collection
-        .map(|triple| (triple.1, triple))
-        .join(&only_domain.map(|triple| (triple.0, ())))
-        .map(|(_, (triple, ()))| triple);
-
-    candidates
-        .map(|triple| (triple.1, (triple.0, triple.2)))
-        .join(&only_domain.map(|triple| (triple.0, (triple.1, triple.2))))
-        .map(move |(_key, ((a, _b), (_dom, d)))| (a, 4, d))
-}
-
-/// Third rule: [z, TYPE, x] <= [a, RANGE, x], [y, a, z]
-pub fn rule_3<G>(data_collection: &Collection<G, EncodedTriple>) -> Collection<G, EncodedTriple>
-where
-    G: Scope,
-    G::Timestamp: Lattice,
-{
-    /// 3 = RANGE
-    let only_range = data_collection.filter(move |triple| triple.1 == 3);
-
-    let candidates = data_collection
-        .map(|triple| ((triple.1, triple)))
-        .join(&only_range.map(|triple| (triple.0, ())))
-        .map(|(_, (triple, ()))| triple);
-
-    candidates
-        .map(|triple| (triple.1, (triple.0, triple.2)))
-        .join(&only_range.map(|triple| (triple.0, (triple.1, triple.2))))
-        .map(move |(_key, ((_a, b), (_ran, r)))| (b, 4, r))
-}
-
-/// Standard rule application
-pub fn materialize<G>(
-    input_stream: &Collection<G, (usize, usize, usize)>,
-) -> Collection<G, (usize, usize, usize)>
-where
-    G::Timestamp: Lattice,
-    G: Scope,
-{
-    let sco_transitive_closure = rule_11(&input_stream);
-
-    let spo_transitive_closure = rule_5(&input_stream);
-
-    let input_stream = input_stream
-        .concat(&sco_transitive_closure)
-        .concat(&spo_transitive_closure);
-
-    let input_stream = trans_property_rule(&input_stream).concat(&input_stream);
-
-    let input_stream = inverseof_rule(&input_stream).concat(&input_stream);
-
-    let spo_type_rule = rule_7(&input_stream);
-
-    let input_stream = input_stream.concat(&spo_type_rule).distinct();
-
-    let input_stream = inverseof_rule(&input_stream).concat(&input_stream);
-
-    let domain_type_rule = rule_2(&input_stream);
-
-    let input_stream = input_stream.concat(&domain_type_rule);
-
-    let range_type_rule = rule_3(&input_stream);
-
-    let input_stream = input_stream.concat(&range_type_rule);
-
-    let sco_type_rule = rule_9(&input_stream);
-
-    let input_stream = input_stream.concat(&sco_type_rule).distinct();
-
-    input_stream
 }
