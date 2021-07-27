@@ -31,19 +31,19 @@ fn main() {
         let index = worker.index();
         let peers = worker.peers();
 
-        let part1_data = String::from("part1-lubm50_split");
+        let part1_data = String::from("abox_part");
         let part2_data = String::from("part2-lubm50_split");
         let part3_data = String::from("part3-lubm50_split");
         let index_as_string = index.to_string();
         let suffix = String::from(".ntenc");
 
         let first90 = [part1_data, index_as_string.clone(), suffix.clone()].join("");
-        let first90_triples = load3enc("./tests/data/update_data_four/", &first90);
+        let first90_triples = load3enc(&format!("./encoded_data/lubms/50/{}", &first90));
         // let next9 = [part2_data, index_as_string.clone(), suffix.clone()].join("");
         // let next9_triples = load3enc("./tests/data/update_data/", &next9);
         // let next1 =  [part3_data, index_as_string.clone(), suffix.clone()].join("");
         // let next1_triples = load3enc("./tests/data/update_data/", &next1);
-        let tbox_triples = load3enc("./tests/data/", "tbox.ntenc");
+        let tbox_triples = load3enc("./encoded_data/lubms/50/tbox.ntenc");
 
         let tbox_probe = Handle::new();
         let abox_probe = Handle::new();
