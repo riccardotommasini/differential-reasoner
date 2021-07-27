@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use rdfs_materialization::load_encode_triples::{load3enc, load3nt};
+use rdfs_materialization::load_encode_triples::{load3enc};
 
 use std::env;
 use std::net::TcpStream;
@@ -10,7 +10,6 @@ use differential_dataflow::operators::arrange::ArrangeByKey;
 use differential_dataflow::operators::JoinCore;
 use differential_dataflow::operators::Iterate;
 use differential_dataflow::operators::Threshold;
-
 use differential_dataflow::operators::arrange::ArrangeBySelf;
 use differential_dataflow::operators::iterate;
 use differential_dataflow::trace::TraceReader;
@@ -22,6 +21,7 @@ use timely::dataflow::Scope;
 use timely::dataflow::operators::Probe;
 use timely::dataflow::operators::probe::Handle;
 use timely::order::Product;
+
 
 pub fn load_encoded_triples(c: &mut Criterion) {
     c.bench_function("load encoded triples", |b| {
@@ -40,12 +40,12 @@ pub fn load_encoded_triples(c: &mut Criterion) {
 		    let suffix = String::from(".ntenc");
 		    
 		    let first90 = [part1_data, index_as_string.clone(), suffix.clone()].join("");
-		    let first90_triples = load3enc("./tests/data/update_data/", &first90);
+		    let first90_triples = load3enc(&format!("./tests/data/update_data/{}", first90));
 		    let next9 = [part2_data, index_as_string.clone(), suffix.clone()].join("");
-		    let next9_triples = load3enc("./tests/data/update_data/", &next9);
+		    let next9_triples = load3enc(&format!("./tests/data/update_data/{}", next9));
 		    let next1 =  [part3_data, index_as_string.clone(), suffix.clone()].join("");
-		    let next1_triples = load3enc("./tests/data/update_data/", &next1);
-		    let tbox_triples = load3enc("./tests/data/", "tbox.ntenc");
+		    let next1_triples = load3enc(&format!("./tests/data/update_data/{}", next1));
+		    let tbox_triples = load3enc("./tests/data/tbox.ntenc");
 
 		    let tbox_probe = Handle::new();
 		    let abox_probe = Handle::new();
@@ -118,12 +118,13 @@ pub fn first90(c: &mut Criterion) {
 		    let suffix = String::from(".ntenc");
 		    
 		    let first90 = [part1_data, index_as_string.clone(), suffix.clone()].join("");
-		    let first90_triples = load3enc("./tests/data/update_data/", &first90);
+		    let first90_triples = load3enc(&format!("./tests/data/update_data/{}", first90));
 		    let next9 = [part2_data, index_as_string.clone(), suffix.clone()].join("");
-		    let next9_triples = load3enc("./tests/data/update_data/", &next9);
+		    let next9_triples = load3enc(&format!("./tests/data/update_data/{}", next9));
 		    let next1 =  [part3_data, index_as_string.clone(), suffix.clone()].join("");
-		    let next1_triples = load3enc("./tests/data/update_data/", &next1);
-		    let tbox_triples = load3enc("./tests/data/", "tbox.ntenc");
+		    let next1_triples = load3enc(&format!("./tests/data/update_data/{}", next1));
+		    let tbox_triples = load3enc("./tests/data/tbox.ntenc");
+
 
 		    let tbox_probe = Handle::new();
 		    let abox_probe = Handle::new();
@@ -281,12 +282,13 @@ pub fn next9(c: &mut Criterion) {
 		    let suffix = String::from(".ntenc");
 		    
 		    let first90 = [part1_data, index_as_string.clone(), suffix.clone()].join("");
-		    let first90_triples = load3enc("./tests/data/update_data/", &first90);
+		    let first90_triples = load3enc(&format!("./tests/data/update_data/{}", first90));
 		    let next9 = [part2_data, index_as_string.clone(), suffix.clone()].join("");
-		    let next9_triples = load3enc("./tests/data/update_data/", &next9);
+		    let next9_triples = load3enc(&format!("./tests/data/update_data/{}", next9));
 		    let next1 =  [part3_data, index_as_string.clone(), suffix.clone()].join("");
-		    let next1_triples = load3enc("./tests/data/update_data/", &next1);
-		    let tbox_triples = load3enc("./tests/data/", "tbox.ntenc");
+		    let next1_triples = load3enc(&format!("./tests/data/update_data/{}", next1));
+		    let tbox_triples = load3enc("./tests/data/tbox.ntenc");
+
 
 		    let tbox_probe = Handle::new();
 		    let abox_probe = Handle::new();
@@ -443,12 +445,13 @@ pub fn next1(c: &mut Criterion) {
 		    let suffix = String::from(".ntenc");
 		    
 		    let first90 = [part1_data, index_as_string.clone(), suffix.clone()].join("");
-		    let first90_triples = load3enc("./tests/data/update_data/", &first90);
+		    let first90_triples = load3enc(&format!("./tests/data/update_data/{}", first90));
 		    let next9 = [part2_data, index_as_string.clone(), suffix.clone()].join("");
-		    let next9_triples = load3enc("./tests/data/update_data/", &next9);
+		    let next9_triples = load3enc(&format!("./tests/data/update_data/{}", next9));
 		    let next1 =  [part3_data, index_as_string.clone(), suffix.clone()].join("");
-		    let next1_triples = load3enc("./tests/data/update_data/", &next1);
-		    let tbox_triples = load3enc("./tests/data/", "tbox.ntenc");
+		    let next1_triples = load3enc(&format!("./tests/data/update_data/{}", next1));
+		    let tbox_triples = load3enc("./tests/data/tbox.ntenc");
+
 
 		    let tbox_probe = Handle::new();
 		    let abox_probe = Handle::new();
