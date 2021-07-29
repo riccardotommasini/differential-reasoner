@@ -4,3 +4,5 @@ target/
 .DS_store
 .Rproj.user
 dataflow-graph/
+/not_encoded_data/
+/encoded_data/
