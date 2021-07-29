@@ -9,7 +9,3 @@ timely = "0.12.0"
 differential-dataflow = "0.12.0"
 criterion = "0.3.4"
 lasso = "0.5.1"
-
-[[bench]]
-name = "bench_main"
-harness = false
