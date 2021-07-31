@@ -1,5 +1,5 @@
 [package]
-name = "rdfs-materialization"
+name = "differential-reasoner"
 version = "0.2.0"
 authors = ["bruno_rucy <brurucy@gmail.com>"]
 edition = "2018"
