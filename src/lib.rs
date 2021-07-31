@@ -1,3 +1,2 @@
 pub mod load_encode_triples;
-pub mod rdfs_materialization;
-pub mod utils;
+pub mod materializations;

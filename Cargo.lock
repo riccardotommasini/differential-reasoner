@@ -212,6 +212,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "differential-reasoner"
+version = "0.2.0"
+dependencies = [
+ "criterion",
+ "differential-dataflow",
+ "lasso",
+ "timely",
+]
+
+[[package]]
 name = "either"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -520,16 +530,6 @@ dependencies = [
  "crossbeam-utils",
  "lazy_static",
  "num_cpus",
-]
-
-[[package]]
-name = "rdfs-materialization"
-version = "0.2.0"
-dependencies = [
- "criterion",
- "differential-dataflow",
- "lasso",
- "timely",
 ]
 
 [[package]]
