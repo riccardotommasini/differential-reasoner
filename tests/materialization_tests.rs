@@ -1,9 +1,9 @@
+use std::collections::BTreeMap;
 use differential_dataflow::input::Input;
-
 use differential_dataflow::operators::arrange::ArrangeBySelf;
 use differential_dataflow::trace::TraceReader;
 use differential_dataflow::trace::cursor::CursorDebug;
-use differential_reasoner::load_encode_triples::load3enc;
+use differential_reasoner::load_encode_triples::{load3enc, loadkvenc, read_file};
 use differential_reasoner::materializations::*;
 use timely::dataflow::operators::probe::Handle;
 
@@ -55,23 +55,47 @@ fn rdfspp_test() {
 	(tbox_cursor.to_vec(&tbox_storage), abox_cursor.to_vec(&abox_storage))
     });
 
+    let encoding_map_file = loadkvenc("./encoded_data/test/encoding_mapping.kv");
+
+    let mut encoding_map = BTreeMap::<usize, String>::new();
+
+    for key_value_par in encoding_map_file {
+	let (key, value) = key_value_par;
+	encoding_map.insert(key, value.clone());
+    };
+
     let tbox_size = tbox_summaries.len();
 
     let abox_size = abox_summaries.len();
 
     for summary in abox_summaries.drain(..) {
-    println!("Abox entry: {:?}", summary)
+
+	let encoded_triple = summary.0.0;
+
+	let s = encoding_map.get(&encoded_triple.0).unwrap();
+	let p = encoding_map.get(&encoded_triple.1).unwrap();
+	let o = encoding_map.get(&encoded_triple.2).unwrap();
+	
+	println!("Abox entry: {:?}", (s, p, o))
     };
 
     for summary in tbox_summaries.drain(..) {
+	
+	let encoded_triple = summary.0.0;
 
-    println!("Tbox entry: {:?}", summary)
+	let s = encoding_map.get(&encoded_triple.0).unwrap();
+	let p = encoding_map.get(&encoded_triple.1).unwrap();
+	let o = encoding_map.get(&encoded_triple.2).unwrap();
+	
+	println!("Tbox entry: {:?}", (s, p, o))
 	
     }
  
     /*
     This is the amount of materialized tuples that RDFox got with the same set of rules
-    */
-    assert_eq!(tbox_size + abox_size, 57);
+     */
+
+    assert_eq!(tbox_size, 29);
+    assert_eq!(abox_size, 28);
 
 }
