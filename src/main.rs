@@ -35,14 +35,11 @@ fn main() {
         let timer = worker.timer();
         let index = worker.index();
 
-        let part1_data = String::from("abox_part");
-        let part2_data = String::from("part2-lubm50_split");
-        let part3_data = String::from("part3-lubm50_split");
+        let data = String::from("abox_part0.ntenc");
         let index_as_string = index.to_string();
         let suffix = String::from(".ntenc");
 
-        let first90 = [part1_data, index_as_string.clone(), suffix.clone()].join("");
-        let first90_triples = load3enc(&format!("./encoded_data/lubms/50/{}", &first90));
+        let triples = load3enc(&format!("./encoded_data/lubms/50/{}", &data));
         // let next9 = [part2_data, index_as_string.clone(), suffix.clone()].join("");
         // let next9_triples = load3enc("./tests/data/update_data/", &next9);
         // let next1 =  [part3_data, index_as_string.clone(), suffix.clone()].join("");
@@ -58,7 +55,7 @@ fn main() {
                 let (mut _abox_in, abox) = outer.new_collection::<(usize, usize, usize), isize>();
                 let (mut _tbox_in, tbox) = outer.new_collection::<(usize, usize, usize), isize>();
 
-                let (tbox, abox) = rdfspp(&tbox, &abox, outer);
+                let (tbox, abox) = rdfs(&tbox, &abox, outer);
 
                 tbox.probe_with(&mut tbox_probe);
                 abox.probe_with(&mut abox_probe);
@@ -79,15 +76,20 @@ fn main() {
         tbox_input_stream.flush();
         worker.step_while(|| tbox_probe.less_than(tbox_input_stream.time()));
 
-        first90_triples.for_each(|triple| {
-            abox_input_stream.insert((triple.0, triple.1, triple.2));
-        });
+        if 0 == worker.index() {
+            triples.for_each(|triple| {
+                abox_input_stream.insert((triple.0, triple.1, triple.2));
+            });
+        }
         abox_input_stream.advance_to(1);
         abox_input_stream.flush();
+        let loading_data_ms = timer.elapsed();
+        println!("loading data, {:?} at {:?}", loading_data_ms, index);
         worker.step_while(|| abox_probe.less_than(abox_input_stream.time()));
+        let materializing_data_ms = timer.elapsed();
         println!(
-            "abox materialization finished, first 90%; elapsed: {:?} at {:?}",
-            timer.elapsed(),
+            "materializing, {:?} at {:?}",
+            materializing_data_ms - loading_data_ms,
             index
         );
 
