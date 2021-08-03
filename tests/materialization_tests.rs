@@ -90,10 +90,6 @@ fn rdfspp_test() {
 	println!("Tbox entry: {:?}", (s, p, o))
 	
     }
- 
-    /*
-    This is the amount of materialized tuples that RDFox got with the same set of rules
-     */
 
     assert_eq!(tbox_size, 29);
     assert_eq!(abox_size, 28);
