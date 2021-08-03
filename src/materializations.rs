@@ -71,7 +71,7 @@ where
             (sco_new.leave(), spo_new.leave())
         });
 
-        tbox_by_s.concat(&sco).concat(&spo).consolidate().leave()
+        tbox_by_s.concat(&sco).concat(&spo).leave()
     });
 
     let tbox_by_s = tbox.arrange_by_key();
@@ -82,147 +82,151 @@ where
     let general_trans_assertions = tbox_by_s.filter(|s, (p, o)| o == &5usize);
     let inverse_of_assertions = tbox_by_s.filter(|s, (p, o)| p == &6usize);
 
-    let type_assertions = abox
+    let class_assertions = abox
         .map(|(s, p, o)| (o, (s, p)))
         .filter(|(o, (s, p))| p == &4usize);
 
-    let not_type_assertions_by_p = abox
+    let property_assertions = abox
         .map(|(s, p, o)| (p, (s, o)))
         .filter(|(p, (s, o))| p != &4usize);
 
-    let (sco_type, spo_type) = outer.region_named("Abox transitive Rules", |inn| {
-        let type_assertions = type_assertions.enter(inn);
-        let not_type_assertions_by_p = not_type_assertions_by_p.enter(inn);
-        let sco_assertions = sco_assertions.enter(inn);
+    let property_materialization = outer.region_named("Abox transitive property rules", |inn| {
+        let property_assertions = property_assertions.enter(inn);
         let spo_assertions = spo_assertions.enter(inn);
         let general_trans_assertions = general_trans_assertions.enter(inn);
+        let inverse_of_assertions = inverse_of_assertions.enter(inn);
 
-        let (sco_type, spo_type) = inn.iterative::<usize, _, _>(|inner| {
-            let sco_var =
+        let property_materialization = inn.iterative::<usize, _, _>(|inner| {
+            let spo_type_gen_trans_inv_var =
                 iterate::SemigroupVariable::new(inner, Product::new(Default::default(), 1));
-            let spo_gen_trans_var =
-                iterate::SemigroupVariable::new(inner, Product::new(Default::default(), 1));
 
-            let sco_new = sco_var.distinct();
-            let spo_gen_trans_new = spo_gen_trans_var.distinct();
+            let spo_type_gen_trans_inv_arr = spo_type_gen_trans_inv_var.distinct();
 
-            let sco_arr = sco_new.arrange_by_key();
-            let spo_gen_trans_arr = spo_gen_trans_new.arrange_by_key();
+            let spo_gen_trans_inv_arr = spo_type_gen_trans_inv_arr.arrange_by_key();
 
-            let sco_ass = sco_assertions.enter(inner);
             let spo_ass = spo_assertions.enter(inner);
             let gen_trans_ass = general_trans_assertions.enter(inner);
+            let inverse_ass = inverse_of_assertions.enter(inner);
 
-            let sco_iter_step = sco_ass.join_core(&sco_arr, |_key, &(_sco, y), &(z, type_)| {
-                Some((y, (z, type_)))
-            });
+            let left_inverse_ass = inverse_ass.clone();
+            let right_inverse_ass = inverse_ass
+                .as_collection(|s, (p, o)| (*o, (*p, *s)))
+                .arrange_by_key();
 
             let spo_iter_step = spo_ass
-                .join_core(&spo_gen_trans_arr, |_key, &(_spo, b), &(x, y)| {
+                .join_core(&spo_gen_trans_inv_arr, |_key, &(_spo, b), &(x, y)| {
                     Some((b, (x, y)))
                 });
 
-            let trans_only = gen_trans_ass
-                .join_core(&spo_gen_trans_arr, |&p, &(_type_kw, _trans_kw), &(s, o)| {
-                    Some(((s, p), o))
+            let left_inverse_only_iter_step = left_inverse_ass
+                .join_core(&spo_gen_trans_inv_arr, |&_, &(_, p1), &(s, o)| {
+                    Some((p1, (o, s)))
                 });
 
-            let trans_only_reverse = trans_only.map(|((s, p), o)| ((o, p), s)).arrange_by_key();
+            let right_inverse_only_iter_step = right_inverse_ass
+                .join_core(&spo_gen_trans_inv_arr, |&_, &(_, p0), &(o, s)| {
+                    Some((p0, (s, o)))
+                });
 
-            let trans_only_arr = trans_only.arrange_by_key();
+            let trans_p_only = gen_trans_ass.join_core(
+                &spo_gen_trans_inv_arr,
+                |&p, &(_type_kw, _trans_kw), &(s, o)| Some(((s, p), o)),
+            );
 
-            let gen_trans_iter_step = trans_only_reverse
-                .join_core(&trans_only_arr, |&(_o, p), &s, &o_prime| {
+            let trans_p_only_reverse = trans_p_only.map(|((s, p), o)| ((o, p), s)).arrange_by_key();
+
+            let trans_p_only_arr = trans_p_only.arrange_by_key();
+
+            let gen_trans_iter_step = trans_p_only_reverse
+                .join_core(&trans_p_only_arr, |&(_o, p), &s, &o_prime| {
                     Some((p, (s, o_prime)))
                 });
 
-            sco_var.set(&type_assertions.enter(inner).concat(&sco_iter_step));
+            spo_type_gen_trans_inv_var.set(&property_assertions.enter(inner).concatenate(vec![
+                spo_iter_step,
+                gen_trans_iter_step,
+                left_inverse_only_iter_step,
+                right_inverse_only_iter_step,
+            ]));
 
-            spo_gen_trans_var.set(
-                &not_type_assertions_by_p
-                    .enter(inner)
-                    .concatenate(vec![spo_iter_step, gen_trans_iter_step]),
-            );
-
-            (sco_new.leave(), spo_gen_trans_new.leave())
+            spo_type_gen_trans_inv_arr.leave()
         });
 
-        (sco_type.leave(), spo_type.leave())
+        property_materialization.leave()
     });
 
-    let not_type_assertions_by_p = spo_type
+    let property_assertions = property_materialization
         //.inspect(|x| println!("SPO and Gen Trans materialization{:?}", x))
-        .concat(&not_type_assertions_by_p)
-        .consolidate();
+        .concat(&property_assertions);
 
-    let not_type_assertions_by_p_arr = not_type_assertions_by_p.arrange_by_key();
+    let property_assertions_arr = property_assertions.arrange_by_key();
 
     let (domain_type, range_type) = outer.region_named("Domain and Range type rules", |inner| {
-        let not_type_assertions_by_p_arr = not_type_assertions_by_p_arr.enter(inner);
+        let property_assertions_arr = property_assertions_arr.enter(inner);
 
         let domain_assertions = domain_assertions.enter(inner);
 
-        let domain_type = domain_assertions.join_core(
-            &not_type_assertions_by_p_arr,
-            |_a, &(_domain, x), &(y, _z)| Some((4usize, (y, x))),
-        );
+        let domain_type = domain_assertions
+            .join_core(&property_assertions_arr, |_, &(_, x), &(y, _)| {
+                Some((4usize, (y, x)))
+            });
 
         let range_assertions = range_assertions.enter(inner);
 
-        let range_type = range_assertions.join_core(
-            &not_type_assertions_by_p_arr,
-            |_a, &(_range, x), &(_y, z)| Some((4usize, (z, x))),
-        );
+        let range_type = range_assertions
+            .join_core(&property_assertions_arr, |_, &(_, x), &(_, z)| {
+                Some((4usize, (z, x)))
+            });
 
         (domain_type.leave(), range_type.leave())
     });
 
-    let inverse_of_materialization = outer.region_named("Inverse of", |inner| {
-        let arranged_data_by_p = not_type_assertions_by_p_arr.enter(inner);
+    let class_assertions = class_assertions
+        .concatenate(vec![domain_type, range_type])
+        .consolidate();
 
-        let inverse_only = inverse_of_assertions.enter(inner);
-        let inverse_only_by_s = inverse_only.clone();
-        let inverse_only_by_o = inverse_only
-            .as_collection(|s, (p, o)| (*o, (*p, *s)))
-            .arrange_by_key();
+    let class_materialization = outer.region_named("Abox transitive class rules", |inn| {
+        let sco_assertions = sco_assertions.enter(inn);
+        let class_assertions = class_assertions.enter(inn);
 
-        let left_inverse_only_by_s = inverse_only_by_s
-            .join_core(&arranged_data_by_p, |&_p0, &(_inverseof, p1), &(s, o)| {
-                Some((o, p1, s))
-            });
+        let class_materialization = inn.iterative::<usize, _, _>(|inner| {
+            let sco_type_var =
+                iterate::SemigroupVariable::new(inner, Product::new(Default::default(), 1));
 
-        let right_inverse_only_by_s = inverse_only_by_o
-            .join_core(&arranged_data_by_p, |&_p1, &(_inverseof, p0), &(o, s)| {
-                Some((s, p0, o))
-            });
+            let sco_type_new = sco_type_var.distinct();
 
-        left_inverse_only_by_s
-            .concat(&right_inverse_only_by_s)
-            .leave()
+            let sco_type_arr = sco_type_new.arrange_by_key();
+
+            let class_assertions = class_assertions.enter(inner);
+
+            let sco_tbox_ass = sco_assertions.enter(inner);
+
+            let sco_iter_step = sco_tbox_ass
+                .join_core(&sco_type_arr, |_key, &(_sco, y), &(z, type_)| {
+                    Some((y, (z, type_)))
+                });
+
+            sco_type_var.set(&class_assertions.concat(&sco_iter_step));
+
+            sco_type_new.leave()
+        });
+
+        class_materialization.leave()
     });
 
+    let class_assertions = class_assertions.concat(&class_materialization);
+
     let abox = outer.region_named("Concatenating all rules", |inner| {
-        let type_assertions = type_assertions.enter(inner);
-        let sco_type = sco_type.enter(inner);
-        let not_type_assertions_by_p = not_type_assertions_by_p.enter(inner);
-        let domain_type = domain_type.enter(inner);
-        let range_type = range_type.enter(inner);
         let abox = abox.enter(inner);
-        let inverse_of = inverse_of_materialization.enter(inner);
 
-        let not_type_assertions_by_p = not_type_assertions_by_p
-            .concat(&domain_type)
-            .concat(&range_type)
-            .map(|(p, (x, y))| (x, p, y))
-            .concat(&inverse_of);
+        let property_assertions = property_assertions
+            .enter(inner)
+            .map(|(p, (x, y))| (x, p, y));
 
-        let type_assertions = type_assertions
-            .concat(&sco_type)
-            .map(|(y, (z, type_))| (z, type_, y));
+        let class_assertions = class_assertions.enter(inner).map(|(y, (x, p))| (x, p, y));
 
-        not_type_assertions_by_p
-            .concat(&type_assertions)
-            .concat(&abox)
+        abox.concat(&property_assertions)
+            .concat(&class_assertions)
             .consolidate()
             .leave()
     });
