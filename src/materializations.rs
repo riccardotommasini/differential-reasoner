@@ -360,7 +360,5 @@ where
             .leave()
     });
 
-    //let tbox = tbox.map(|((s, (p, o)))|(s, p, o));
-
     (tbox.map(|(s, (p, o))| (s, p, o)), abox)
 }
