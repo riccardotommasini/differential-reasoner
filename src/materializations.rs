@@ -129,21 +129,27 @@ where
     G::Timestamp: Lattice,
 {
     outer.region_named("Domain and Range type rules", |inner| {
-        let property_assertions_arr = abox_property_assertions.enter(inner).arrange_by_key();
+        let property_assertions = abox_property_assertions.enter(inner);
+
+        let p_s_arr = property_assertions
+            .map(|(p, (s, _o))| (p, s))
+            .distinct()
+            .arrange_by_key_named("Arrange (p, s) for PRP-DOM");
+
+        let p_o_arr = property_assertions
+            .map(|(p, (_s, o))| (p, o))
+            .distinct()
+            .arrange_by_key_named("Arrange (p, o) for PRP-RNG");
 
         let domain_assertions = tbox_domain_assertions.enter(inner);
 
-        let domain_type = domain_assertions
-            .join_core(&property_assertions_arr, |_, &(_, x), &(y, _)| {
-                Some((x, (y, 4usize)))
-            });
+        let domain_type =
+            domain_assertions.join_core(&p_s_arr, |_p, &(_, x), &y| Some((x, (y, 4usize))));
 
         let range_assertions = tbox_range_assertions.enter(inner);
 
-        let range_type = range_assertions
-            .join_core(&property_assertions_arr, |_, &(_, x), &(_, z)| {
-                Some((x, (z, 4usize)))
-            });
+        let range_type =
+            range_assertions.join_core(&p_o_arr, |_p, &(_, x), &z| Some((x, (z, 4usize))));
 
         (domain_type.leave(), range_type.leave())
     })
