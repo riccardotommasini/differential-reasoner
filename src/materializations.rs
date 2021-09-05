@@ -173,31 +173,17 @@ where
         .filter(|(p, (s, o))| p != &4usize);
 
     let property_materialization = outer.region_named("Abox transitive property rules", |inn| {
-        let property_assertions = property_assertions.enter(inn);
-        let spo_assertions = spo_assertions.enter(inn);
+        let property_assertions_arr = property_assertions
+            .enter(inn)
+            .arrange_by_key_named("Arrange property assertions for Abox PRP-SPO1");
 
-        let property_materialization = inn.iterative::<usize, _, _>(|inner| {
-            let spo_type_gen_trans_inv_var =
-                iterate::SemigroupVariable::new(inner, Product::new(Default::default(), 1));
-
-            let spo_type_gen_trans_inv_new = spo_type_gen_trans_inv_var.distinct();
-
-            let spo_type_gen_trans_inv_arr = spo_type_gen_trans_inv_new.arrange_by_key();
-
-            let spo_ass = spo_assertions.enter(inner);
-
-            let spo_iter_step = spo_ass
-                .join_core(&spo_type_gen_trans_inv_arr, |_key, &(_spo, b), &(x, y)| {
-                    Some((b, (x, y)))
-                });
-
-            spo_type_gen_trans_inv_var
-                .set(&property_assertions.enter(inner).concat(&spo_iter_step));
-
-            spo_type_gen_trans_inv_new.leave()
-        });
-
-        property_materialization.leave()
+        spo_assertions
+            .enter(inn)
+            .join_core(&property_assertions_arr, |_key, &(_spo, b), &(x, y)| {
+                Some((b, (x, y)))
+            })
+            .distinct()
+            .leave()
     });
 
     let property_assertions = property_materialization.concat(&property_assertions);
