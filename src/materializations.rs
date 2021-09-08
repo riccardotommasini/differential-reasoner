@@ -85,33 +85,18 @@ where
     G: Scope,
     G::Timestamp: Lattice,
 {
-    outer.region_named("Abox transitive class rules", |inn| {
+    outer.region_named("CAX-SCO", |inn| {
         let sco_assertions = tbox_sco_assertions.enter(inn);
         let class_assertions = abox_class_assertions.enter(inn);
 
-        let class_materialization = inn.iterative::<usize, _, _>(|inner| {
-            let sco_type_var =
-                iterate::SemigroupVariable::new(inner, Product::new(Default::default(), 1));
+        let class_assertions_arranged = class_assertions.arrange_by_key();
 
-            let sco_type_new = sco_type_var.distinct();
-
-            let sco_type_arr = sco_type_new.arrange_by_key();
-
-            let class_assertions = class_assertions.enter(inner);
-
-            let sco_tbox_ass = sco_assertions.enter(inner);
-
-            let sco_iter_step = sco_tbox_ass
-                .join_core(&sco_type_arr, |_key, &(_sco, y), &(z, type_)| {
-                    Some((y, (z, type_)))
-                });
-
-            sco_type_var.set(&class_assertions.concat(&sco_iter_step));
-
-            sco_type_new.leave()
-        });
-
-        class_materialization.leave()
+        sco_assertions
+            .join_core(
+                &class_assertions_arranged,
+                |_key, &(_sco, y), &(z, type_)| Some((y, (z, type_))),
+            )
+            .leave()
     })
 }
 
