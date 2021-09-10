@@ -85,33 +85,18 @@ where
     G: Scope,
     G::Timestamp: Lattice,
 {
-    outer.region_named("Abox transitive class rules", |inn| {
+    outer.region_named("CAX-SCO", |inn| {
         let sco_assertions = tbox_sco_assertions.enter(inn);
         let class_assertions = abox_class_assertions.enter(inn);
 
-        let class_materialization = inn.iterative::<usize, _, _>(|inner| {
-            let sco_type_var =
-                iterate::SemigroupVariable::new(inner, Product::new(Default::default(), 1));
+        let class_assertions_arranged = class_assertions.arrange_by_key();
 
-            let sco_type_new = sco_type_var.distinct();
-
-            let sco_type_arr = sco_type_new.arrange_by_key();
-
-            let class_assertions = class_assertions.enter(inner);
-
-            let sco_tbox_ass = sco_assertions.enter(inner);
-
-            let sco_iter_step = sco_tbox_ass
-                .join_core(&sco_type_arr, |_key, &(_sco, y), &(z, type_)| {
-                    Some((y, (z, type_)))
-                });
-
-            sco_type_var.set(&class_assertions.concat(&sco_iter_step));
-
-            sco_type_new.leave()
-        });
-
-        class_materialization.leave()
+        sco_assertions
+            .join_core(
+                &class_assertions_arranged,
+                |_key, &(_sco, y), &(z, type_)| Some((y, (z, type_))),
+            )
+            .leave()
     })
 }
 
@@ -129,21 +114,27 @@ where
     G::Timestamp: Lattice,
 {
     outer.region_named("Domain and Range type rules", |inner| {
-        let property_assertions_arr = abox_property_assertions.enter(inner).arrange_by_key();
+        let property_assertions = abox_property_assertions.enter(inner);
+
+        let p_s_arr = property_assertions
+            .map(|(p, (s, _o))| (p, s))
+            .distinct()
+            .arrange_by_key_named("Arrange (p, s) for PRP-DOM");
+
+        let p_o_arr = property_assertions
+            .map(|(p, (_s, o))| (p, o))
+            .distinct()
+            .arrange_by_key_named("Arrange (p, o) for PRP-RNG");
 
         let domain_assertions = tbox_domain_assertions.enter(inner);
 
-        let domain_type = domain_assertions
-            .join_core(&property_assertions_arr, |_, &(_, x), &(y, _)| {
-                Some((x, (y, 4usize)))
-            });
+        let domain_type =
+            domain_assertions.join_core(&p_s_arr, |_p, &(_, x), &y| Some((x, (y, 4usize))));
 
         let range_assertions = tbox_range_assertions.enter(inner);
 
-        let range_type = range_assertions
-            .join_core(&property_assertions_arr, |_, &(_, x), &(_, z)| {
-                Some((x, (z, 4usize)))
-            });
+        let range_type =
+            range_assertions.join_core(&p_o_arr, |_p, &(_, x), &z| Some((x, (z, 4usize))));
 
         (domain_type.leave(), range_type.leave())
     })
@@ -173,31 +164,17 @@ where
         .filter(|(p, (s, o))| p != &4usize);
 
     let property_materialization = outer.region_named("Abox transitive property rules", |inn| {
-        let property_assertions = property_assertions.enter(inn);
-        let spo_assertions = spo_assertions.enter(inn);
+        let property_assertions_arr = property_assertions
+            .enter(inn)
+            .arrange_by_key_named("Arrange property assertions for Abox PRP-SPO1");
 
-        let property_materialization = inn.iterative::<usize, _, _>(|inner| {
-            let spo_type_gen_trans_inv_var =
-                iterate::SemigroupVariable::new(inner, Product::new(Default::default(), 1));
-
-            let spo_type_gen_trans_inv_new = spo_type_gen_trans_inv_var.distinct();
-
-            let spo_type_gen_trans_inv_arr = spo_type_gen_trans_inv_new.arrange_by_key();
-
-            let spo_ass = spo_assertions.enter(inner);
-
-            let spo_iter_step = spo_ass
-                .join_core(&spo_type_gen_trans_inv_arr, |_key, &(_spo, b), &(x, y)| {
-                    Some((b, (x, y)))
-                });
-
-            spo_type_gen_trans_inv_var
-                .set(&property_assertions.enter(inner).concat(&spo_iter_step));
-
-            spo_type_gen_trans_inv_new.leave()
-        });
-
-        property_materialization.leave()
+        spo_assertions
+            .enter(inn)
+            .join_core(&property_assertions_arr, |_key, &(_spo, b), &(x, y)| {
+                Some((b, (x, y)))
+            })
+            .distinct()
+            .leave()
     });
 
     let property_assertions = property_materialization.concat(&property_assertions);
