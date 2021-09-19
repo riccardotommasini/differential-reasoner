@@ -24,15 +24,15 @@ where
 
         let tbox_by_o = tbox.map(|(s, p, o)| (o, (p, s)));
 
-        let tbox_by_s = tbox.map(|(s, p, o)| ((s, (p, o))));
+        let tbox_by_s = tbox.map(|(s, p, o)| (s, (p, o)));
 
         let sco_ass_by_o = tbox_by_o.filter(|(_, (p, _))| p == &0usize);
 
-        let sco_ass_by_s = sco_ass_by_o.map(|(o, (p, s))| ((s, (p, o))));
+        let sco_ass_by_s = sco_ass_by_o.map(|(o, (p, s))| (s, (p, o)));
 
         let spo_ass_by_o = tbox_by_o.filter(|(_, (p, _))| p == &1usize);
 
-        let spo_ass_by_s = spo_ass_by_o.map(|(o, (p, s))| ((s, (p, o))));
+        let spo_ass_by_s = spo_ass_by_o.map(|(o, (p, s))| (s, (p, o)));
 
         let (spo, sco) = inn.iterative::<usize, _, _>(|inner| {
             let sco_var =
@@ -151,17 +151,17 @@ where
 {
     let tbox = tbox_spo_sco_materialization(tbox, outer);
 
-    let sco_assertions = tbox.filter(|((s, (p, o)))| p == &0usize);
-    let spo_assertions = tbox.filter(|((s, (p, o)))| p == &1usize);
-    let domain_assertions = tbox.filter(|((s, (p, o)))| p == &2usize);
-    let range_assertions = tbox.filter(|((s, (p, o)))| p == &3usize);
+    let sco_assertions = tbox.filter(|(_s, (p, _o))| p == &0usize);
+    let spo_assertions = tbox.filter(|(_s, (p, _o))| p == &1usize);
+    let domain_assertions = tbox.filter(|(_s, (p, _o))| p == &2usize);
+    let range_assertions = tbox.filter(|(_s, (p, _o))| p == &3usize);
 
     let class_assertions = abox
         .map(|(s, p, o)| (o, (s, p)))
-        .filter(|(o, (s, p))| p == &4usize);
+        .filter(|(_o, (_s, p))| p == &4usize);
     let property_assertions = abox
         .map(|(s, p, o)| (p, (s, o)))
-        .filter(|(p, (s, o))| p != &4usize);
+        .filter(|(p, (_s, _o))| p != &4usize);
 
     let property_materialization = outer.region_named("Abox transitive property rules", |inn| {
         let property_assertions_arr = property_assertions
@@ -210,7 +210,7 @@ where
             .leave()
     });
 
-    let tbox = tbox.map(|((s, (p, o)))| (s, p, o));
+    let tbox = tbox.map(|(s, (p, o))| (s, p, o));
 
     (tbox, abox)
 }
@@ -226,20 +226,20 @@ where
 {
     let tbox = tbox_spo_sco_materialization(tbox, outer);
 
-    let sco_assertions = tbox.filter(|(s, (p, o))| p == &0usize);
-    let spo_assertions = tbox.filter(|(s, (p, o))| p == &1usize);
-    let domain_assertions = tbox.filter(|(s, (p, o))| p == &2usize);
-    let range_assertions = tbox.filter(|(s, (p, o))| p == &3usize);
-    let general_trans_assertions = tbox.filter(|(s, (p, o))| o == &5usize);
-    let inverse_of_assertions = tbox.filter(|(s, (p, o))| p == &6usize);
+    let sco_assertions = tbox.filter(|(_s, (p, _o))| p == &0usize);
+    let spo_assertions = tbox.filter(|(_s, (p, _o))| p == &1usize);
+    let domain_assertions = tbox.filter(|(_s, (p, _o))| p == &2usize);
+    let range_assertions = tbox.filter(|(_s, (p, _o))| p == &3usize);
+    let general_trans_assertions = tbox.filter(|(_s, (_p, o))| o == &5usize);
+    let inverse_of_assertions = tbox.filter(|(_s, (p, _o))| p == &6usize);
 
     let class_assertions = abox
         .map(|(s, p, o)| (o, (s, p)))
-        .filter(|(o, (s, p))| p == &4usize);
+        .filter(|(_o, (_s, p))| p == &4usize);
 
     let property_assertions = abox
         .map(|(s, p, o)| (p, (s, o)))
-        .filter(|(p, (s, o))| p != &4usize);
+        .filter(|(p, (_s, _o))| p != &4usize);
 
     let property_materialization = outer.region_named("Abox transitive property rules", |inn| {
         let property_assertions = property_assertions.enter(inn);
