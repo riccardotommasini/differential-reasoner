@@ -26,7 +26,7 @@ pub fn load3nt<'a>(filename: &str) -> impl Iterator<Item = (String, String, Stri
 
         line_clean.pop();
 
-        let mut elts = line_clean.split(" ");
+        let mut elts = line_clean.split(' ');
 
         (
             elts.next().unwrap().parse().unwrap(),
@@ -105,9 +105,9 @@ fn main() {
 
         if 0 == worker.index() {
             if let true = encode {
-                let abox = load3nt(&format!("{}", &a_path));
+                let abox = load3nt(&a_path);
                 println!("A-box location: {}", &a_path);
-                let tbox = load3nt(&format!("{}", &t_path));
+                let tbox = load3nt(&t_path);
                 println!("T-box location: {}", &t_path);
 
                 let mut grand_ole_pry = Rodeo::default();
@@ -160,8 +160,8 @@ fn main() {
                 });
             } else {
                 {
-                    let tbox = load3enc(&format!("{}", &t_path));
-                    let abox = load3enc(&format!("{}", &a_path));
+                    let tbox = load3enc(&t_path);
+                    let abox = load3enc(&a_path);
                     tbox.for_each(|triple| {
                         tbox_input_stream.insert((triple.0, triple.1, triple.2));
                     });
@@ -193,8 +193,8 @@ fn main() {
 
     for worker in summaries.into_iter() {
         let (tbox, abox) = worker.unwrap();
-        tbox_triples = tbox_triples + tbox.len();
-        abox_triples = abox_triples + abox.len();
+        tbox_triples += tbox.len();
+        abox_triples += abox.len();
     }
 
     println!(
