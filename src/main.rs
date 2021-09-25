@@ -1,61 +1,98 @@
-use std::env;
-use std::net::TcpStream;
-
 use differential_dataflow::trace::cursor::CursorDebug;
 use differential_dataflow::trace::TraceReader;
 
 use differential_dataflow::input::Input;
-use differential_dataflow::operators::arrange::ArrangeByKey;
 use differential_dataflow::operators::arrange::ArrangeBySelf;
-use differential_dataflow::operators::iterate;
-use differential_dataflow::operators::Consolidate;
-use differential_dataflow::operators::JoinCore;
-use differential_dataflow::operators::Threshold;
 use differential_reasoner::load_encode_triples::load3enc;
-use differential_reasoner::materializations;
 use differential_reasoner::materializations::*;
 use timely::dataflow::operators::probe::Handle;
-use timely::dataflow::operators::ResultStream;
-use timely::dataflow::Scope;
-use timely::order::Product;
+
+use clap::{App, Arg};
+use lasso::{Key, Rodeo};
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::time::Instant;
+
+fn read_file(filename: &str) -> impl Iterator<Item = String> {
+    let file = BufReader::new(File::open(filename).unwrap());
+    file.lines().filter_map(|line| line.ok())
+}
+
+pub fn load3nt<'a>(filename: &str) -> impl Iterator<Item = (String, String, String)> + 'a {
+    read_file(filename).map(move |line| {
+        let mut line_clean = line;
+
+        line_clean.pop();
+
+        line_clean.pop();
+
+        let mut elts = line_clean.split(' ');
+
+        (
+            elts.next().unwrap().parse().unwrap(),
+            elts.next().unwrap().parse().unwrap(),
+            elts.next().unwrap().parse().unwrap(),
+        )
+    })
+}
 
 fn main() {
-    let outer_timer = ::std::time::Instant::now();
-    let summaries = timely::execute_from_args(std::env::args(), move |worker| {
-        // if let Ok(addr) = std::env::var("DIFFERENTIAL_LOG_ADDR") {
-        //     if !addr.is_empty() {
-        // 	if let Ok(stream) = std::net::TcpStream::connect(&addr) {
-        // 	    differential_dataflow::logging::enable(worker, stream);
-        // 	} else {
-        // 	    panic!("Could not connect to differential log address: {:?}", addr);
-        // 	}
-        //     }
-        // }
+    let matches = App::new("differential-reasoner")
+        .version("0.2.0")
+        .about("Reasons in a differential manner 😎")
+        .arg(
+            Arg::new("TBOX_PATH")
+                .about("Sets the tbox file path")
+                .required(true)
+                .index(1),
+        )
+        .arg(
+            Arg::new("ABOX_PATH")
+                .about("Sets the abox file path")
+                .required(true)
+                .index(2),
+        )
+        .arg(
+            Arg::new("EXPRESSIVITY")
+                .about("Sets the expressivity")
+                .required(true)
+                .index(3),
+        )
+        .arg(
+            Arg::new("WORKERS")
+                .about("Sets the amount of workers")
+                .required(true)
+                .index(4),
+        )
+        .arg(Arg::new("ENCODE").about("Encodes the input").short('e'))
+        .get_matches();
 
-        let timer = worker.timer();
-        let index = worker.index();
+    let t_path: String = matches.value_of("TBOX_PATH").unwrap().to_string();
+    let a_path: String = matches.value_of("ABOX_PATH").unwrap().to_string();
+    let expressivity: String = matches.value_of("EXPRESSIVITY").unwrap().to_string();
+    let workers: usize = matches
+        .value_of("WORKERS")
+        .unwrap()
+        .to_string()
+        .parse::<usize>()
+        .unwrap();
+    let encode: bool = matches.is_present("ENCODE");
 
-        let data = String::from("abox_part0.ntenc");
-        let index_as_string = index.to_string();
-        let suffix = String::from(".ntenc");
+    let now = Instant::now();
 
-        let triples = load3enc(&format!("./encoded_data/lubms/50/{}", &data));
-        // let next9 = [part2_data, index_as_string.clone(), suffix.clone()].join("");
-        // let next9_triples = load3enc("./tests/data/update_data/", &next9);
-        // let next1 =  [part3_data, index_as_string.clone(), suffix.clone()].join("");
-        // let next1_triples = load3enc("./tests/data/update_data/", &next1);
-        let tbox_triples = load3enc("./encoded_data/lubms/50/tbox.ntenc");
-
+    let summaries = timely::execute(timely::Config::process(workers), move |worker| {
         let mut tbox_probe = Handle::new();
         let mut abox_probe = Handle::new();
 
         let (mut tbox_input_stream, mut abox_input_stream, mut tbox_trace, mut abox_trace) = worker
             .dataflow::<usize, _, _>(|outer| {
-                // Here we are creating the actual stream inputs
                 let (mut _abox_in, abox) = outer.new_collection::<(usize, usize, usize), isize>();
                 let (mut _tbox_in, tbox) = outer.new_collection::<(usize, usize, usize), isize>();
 
-                let (tbox, abox) = rdfs(&tbox, &abox, outer);
+                let (tbox, abox) = match &expressivity[..] {
+                    "rdfs" => rdfs(&tbox, &abox, outer),
+                    _ => rdfspp(&tbox, &abox, outer),
+                };
 
                 tbox.probe_with(&mut tbox_probe);
                 abox.probe_with(&mut abox_probe);
@@ -66,60 +103,122 @@ fn main() {
                 (_tbox_in, _abox_in, tbox_arr.trace, abox_arr.trace)
             });
 
-        // Tbox
         if 0 == worker.index() {
-            tbox_triples.for_each(|triple| {
-                tbox_input_stream.insert((triple.0, triple.1, triple.2));
-            });
+            if let true = encode {
+                let abox = load3nt(&a_path);
+                println!("A-box location: {}", &a_path);
+                let tbox = load3nt(&t_path);
+                println!("T-box location: {}", &t_path);
+
+                let mut grand_ole_pry = Rodeo::default();
+
+                let rdfsco: &str = "<http://www.w3.org/2000/01/rdf-schema#subClassOf>";
+                let rdfspo: &str = "<http://www.w3.org/2000/01/rdf-schema#subPropertyOf>";
+                let rdfsd: &str = "<http://www.w3.org/2000/01/rdf-schema#domain>";
+                let rdfsr: &str = "<http://www.w3.org/2000/01/rdf-schema#range>";
+                let rdft: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>";
+                let owltr: &str = "<http://www.w3.org/2002/07/owl#TransitiveProperty>";
+                let owlio: &str = "<http://www.w3.org/2002/07/owl#inverseOf>";
+		
+		let _owlthing: &str = "<http://www.w3.org/2002/07/owl#Thing>";
+		let _rdfcomment: &str = "<http://www.w3.org/2000/01/rdf-schema#comment>";
+		let _rdfrest: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#rest>";
+		let _rdffirst: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#first>";
+		let _owlmqc: &str = "<http://www.w3.org/2002/07/owl#maxQualifiedCardinality>";
+		let _owlsvf: &str = "<http://www.w3.org/2002/07/owl#someValuesFrom>";
+		let _owlec: &str = "<http://www.w3.org/2002/07/owl#equivalentClass>";
+		let _owlito: &str = "<http://www.w3.org/2002/07/owl#intersectionOf>";
+		let _owlm: &str = "<http://www.w3.org/2002/07/owl#members>";
+		let _owlep: &str = "<http://www.w3.org/2002/07/owl#equivalentProperty>";
+		let _owlop: &str = "<http://www.w3.org/2002/07/owl#onProperty>";
+		let _owlpca: &str = "<http://www.w3.org/2002/07/owl#propertyChainAxiom>";
+		let _owldw: &str = "<http://www.w3.org/2002/07/owl#disjointWith>";
+		let _owlpdw: &str = "<http://www.w3.org/2002/07/owl#propertyDisjointWith>";
+		let _owluo: &str = "<http://www.w3.org/2002/07/owl#unionOf>";
+		let _owll: &str = "<http://www.w3.org/2000/01/rdf-schema#label>";
+		let _owlhk: &str = "<http://www.w3.org/2002/07/owl#hasKey>";
+		let _owlavf: &str = "<http://www.w3.org/2002/07/owl#allValuesFrom>";
+		let _owlco: &str = "<http://www.w3.org/2002/07/owl#complementOf>";
+		let _owloc: &str = "<http://www.w3.org/2002/07/owl#onClass>";
+		let _owldm: &str = "<http://www.w3.org/2002/07/owl#distinctMembers>";
+		let _owlfp: &str = "<http://www.w3.org/2002/07/owl#FunctionalProperty>";
+		let _owlni: &str = "<http://www.w3.org/2002/07/owl#NamedIndividual>";
+		let _owlop: &str = "<http://www.w3.org/2002/07/owl#ObjectProperty>";
+		let _rdfn: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#nil>";
+		let _owlc: &str = "<http://www.w3.org/2002/07/owl#Class>";
+		let _xmlonenni: &str = "\"1\"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger>";
+		let _xmlzeronni: &str = "\"0\"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger>";
+		let _owladc: &str = "<http://www.w3.org/2002/07/owl#AllDisjointClasses>";
+		let _owlr: &str = "<http://www.w3.org/2002/07/owl#Restriction>";
+		let _owldp: &str = "<http://www.w3.org/2002/07/owl#DatatypeProperty>";
+		let _rdfl: &str = "<http://www.w3.org/2000/01/rdf-schema#Literal>";
+		let _owlo: &str = "<http://www.w3.org/2002/07/owl#Ontology>";
+		let _owlap: &str = "<http://www.w3.org/2002/07/owl#AsymmetricProperty>";
+		let _owlsp: &str = "<http://www.w3.org/2002/07/owl#SymmetricProperty>";
+		let _owlip: &str = "<http://www.w3.org/2002/07/owl#IrreflexiveProperty>";
+		let _owlad: &str = "<http://www.w3.org/2002/07/owl#AllDifferent>";
+		let _owlifp: &str = "<http://www.w3.org/2002/07/owl#InverseFunctionalProperty>";
+
+                grand_ole_pry.get_or_intern(rdfsco);
+                grand_ole_pry.get_or_intern(rdfspo);
+                grand_ole_pry.get_or_intern(rdfsd);
+                grand_ole_pry.get_or_intern(rdfsr);
+                grand_ole_pry.get_or_intern(rdft);
+                grand_ole_pry.get_or_intern(owltr);
+                grand_ole_pry.get_or_intern(owlio);
+
+                tbox.for_each(|triple| {
+                    let s = &triple.0[..];
+                    let p = &triple.1[..];
+                    let o = &triple.2[..];
+
+                    let key_s = grand_ole_pry.get_or_intern(s);
+                    let key_p = grand_ole_pry.get_or_intern(p);
+                    let key_o = grand_ole_pry.get_or_intern(o);
+
+                    let key_s_int = key_s.into_usize();
+                    let key_p_int = key_p.into_usize();
+                    let key_o_int = key_o.into_usize();
+
+                    tbox_input_stream.insert((key_s_int, key_p_int, key_o_int));
+                });
+                abox.for_each(|triple| {
+                    let s = &triple.0[..];
+                    let p = &triple.1[..];
+                    let o = &triple.2[..];
+
+                    let key_s = grand_ole_pry.get_or_intern(s);
+                    let key_p = grand_ole_pry.get_or_intern(p);
+                    let key_o = grand_ole_pry.get_or_intern(o);
+
+                    let key_s_int = key_s.into_usize();
+                    let key_p_int = key_p.into_usize();
+                    let key_o_int = key_o.into_usize();
+
+                    abox_input_stream.insert((key_s_int, key_p_int, key_o_int));
+                });
+            } else {
+                {
+                    let tbox = load3enc(&t_path);
+                    let abox = load3enc(&a_path);
+                    tbox.for_each(|triple| {
+                        tbox_input_stream.insert((triple.0, triple.1, triple.2));
+                    });
+                    abox.for_each(|triple| {
+                        abox_input_stream.insert((triple.0, triple.1, triple.2));
+                    });
+                }
+            };
         }
         tbox_input_stream.advance_to(1);
         tbox_input_stream.flush();
-        worker.step_while(|| tbox_probe.less_than(tbox_input_stream.time()));
-
-        if 0 == worker.index() {
-            triples.for_each(|triple| {
-                abox_input_stream.insert((triple.0, triple.1, triple.2));
-            });
-        }
+        worker.step();
         abox_input_stream.advance_to(1);
         abox_input_stream.flush();
-        let loading_data_ms = timer.elapsed();
-        println!("loading data, {:?} at {:?}", loading_data_ms, index);
+        worker.step();
         worker.step_while(|| abox_probe.less_than(abox_input_stream.time()));
-        let materializing_data_ms = timer.elapsed();
-        println!(
-            "materializing, {:?} at {:?}",
-            materializing_data_ms - loading_data_ms,
-            index
-        );
-
-        // next9_triples
-        //     .for_each(|triple| {
-        // 	abox_input_stream.insert((triple.0, triple.1, triple.2));
-        // });
-        // abox_input_stream.advance_to(2); abox_input_stream.flush();
-        // worker.step_while(|| abox_probe.less_than(abox_input_stream.time()));
-        // println!("abox materialization finished, next 9%; elapsed: {:?} at {:?}", timer.elapsed(), index);
-
-        // next1_triples
-        //     .for_each(|triple| {
-        // 	abox_input_stream.insert((triple.0, triple.1, triple.2));
-        // });
-        // abox_input_stream.advance_to(3); abox_input_stream.flush();
-        // worker.step_while(|| abox_probe.less_than(abox_input_stream.time()));
-        // println!("abox materialization finished, next 1%; elapsed: {:?} at {:?}", timer.elapsed(), index);
-
-        // Updates
-        // abox_triples
-        //     .for_each(|triple| {
-        // 	abox_input_stream.insert((triple.0, triple.1, triple.2));
-        // });
-        // abox_input_stream.advance_to(2); abox_input_stream.flush();
-        // worker.step_while(|| abox_probe.less_than(abox_input_stream.time()));
-
         let (mut tbox_cursor, tbox_storage) = tbox_trace.cursor();
         let (mut abox_cursor, abox_storage) = abox_trace.cursor();
-
         (
             tbox_cursor.to_vec(&tbox_storage),
             abox_cursor.to_vec(&abox_storage),
@@ -133,15 +232,21 @@ fn main() {
 
     for worker in summaries.into_iter() {
         let (tbox, abox) = worker.unwrap();
-
-        println!("tbox len {:?} abox len {:?}", tbox.len(), abox.len());
-
-        tbox_triples = tbox_triples + tbox.len();
-        abox_triples = abox_triples + abox.len();
+        tbox_triples += tbox.len();
+        abox_triples += abox.len();
     }
 
     println!(
         "Full tbox size {:?} \nFull abox size {:?}",
         tbox_triples, abox_triples
     );
+
+    if let true = encode {
+        println!(
+            "loading+interning+materialization time: {:?}",
+            now.elapsed()
+        )
+    } else {
+        println!("loading+materialization time: {:?}", now.elapsed())
+    }
 }

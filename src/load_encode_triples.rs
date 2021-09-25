@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 pub fn read_file(filename: &str) -> impl Iterator<Item = String> {
     use std::fs::File;
     use std::io::{BufRead, BufReader};
@@ -8,7 +6,7 @@ pub fn read_file(filename: &str) -> impl Iterator<Item = String> {
 }
 
 pub fn load3enc<'a>(filename: &str) -> impl Iterator<Item = (usize, usize, usize)> + 'a {
-    read_file(&format!("{}", filename)).map(move |line| {
+    read_file(filename).map(move |line| {
         let mut elts = line.split(' ');
         (
             elts.next().unwrap().parse().unwrap(),
@@ -19,7 +17,7 @@ pub fn load3enc<'a>(filename: &str) -> impl Iterator<Item = (usize, usize, usize
 }
 
 pub fn loadkvenc<'a>(filename: &str) -> impl Iterator<Item = (usize, String)> + 'a {
-    read_file(&format!("{}", filename)).map(move |line| {
+    read_file(filename).map(move |line| {
         let mut elts = line.split(' ');
         (
             elts.next().unwrap().parse().unwrap(),
