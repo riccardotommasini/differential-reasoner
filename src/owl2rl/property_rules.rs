@@ -7,7 +7,7 @@ use timely::{
 
 use super::{Class, Property, SameAs};
 
-fn prp_dom<G, T>(property: &Property<G, T>, class: &mut Class<G, T>)
+pub(crate) fn prp_dom<G, T>(property: &Property<G, T>, class: &mut Class<G, T>)
 where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,
@@ -16,7 +16,7 @@ where
     class.add(property.stream().map(|(x, _y)| x));
 }
 
-fn prp_rng<G, T>(property: &Property<G, T>, class: &mut Class<G, T>)
+pub(crate) fn prp_rng<G, T>(property: &Property<G, T>, class: &mut Class<G, T>)
 where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,
@@ -33,7 +33,7 @@ T(?x, ?p, ?y2)
 T(?y1, owl:sameAs, ?y2)
  */
 
-fn prp_fp<G, T>(property: &Property<G, T>, same_as: &mut SameAs<G, T>)
+pub(crate) fn prp_fp<G, T>(property: &Property<G, T>, same_as: &mut SameAs<G, T>)
 where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,
@@ -53,7 +53,7 @@ T(?x2, ?p, ?y)
 =>
 T(?x1, owl:sameAs, ?x2)
  */
-fn prp_ifp<G, T>(property: &Property<G, T>, same_as: &mut SameAs<G, T>)
+pub(crate) fn prp_ifp<G, T>(property: &Property<G, T>, same_as: &mut SameAs<G, T>)
 where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,
@@ -72,7 +72,7 @@ T(?x, ?p, ?y)
 =>
 T(?y, ?p, ?x)
 */
-fn prp_symp<G, T>(property: &mut Property<G, T>)
+pub(crate) fn prp_symp<G, T>(property: &mut Property<G, T>)
 where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,
@@ -89,7 +89,7 @@ T(?y, ?p, ?z)
 =>
 T(?x, ?p, ?z)
  */
-fn prp_trp<G, T>(property: &mut Property<G, T>)
+pub(crate) fn prp_trp<G, T>(property: &mut Property<G, T>)
 where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,
@@ -115,7 +115,7 @@ T(?x, ?p1, ?y)
 =>
 T(?x, ?p2, ?y)
  */
-fn prp_spo1<G, T>(property1: &Property<G, T>, property2: &mut Property<G, T>)
+pub(crate) fn prp_spo1<G, T>(property1: &Property<G, T>, property2: &mut Property<G, T>)
 where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,
@@ -134,7 +134,7 @@ T(?un, ?pn, ?un+1)
 =>
 T(?u1, ?p, ?un+1)
  */
-fn prp_spo2<G, T>(property_chain: Vec<&Property<G, T>>, target_property: &mut Property<G, T>)
+pub(crate) fn prp_spo2<G, T>(property_chain: Vec<&Property<G, T>>, target_property: &mut Property<G, T>)
 where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,
@@ -176,7 +176,7 @@ T(?x, ?p1, ?y)
 =>
 T(?y, ?p2, ?x)
 */
-fn prp_inv1<G, T>(property1: &Property<G, T>, property2: &mut Property<G, T>)
+pub(crate) fn prp_inv1<G, T>(property1: &Property<G, T>, property2: &mut Property<G, T>)
 where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,
@@ -186,13 +186,14 @@ where
     property2.add(derived);
 }
 
+#[allow(dead_code)]
 /*
 T(?p1, owl:inverseOf, ?p2)
 T(?x, ?p2, ?y)
 =>
 T(?y, ?p1, ?x)
 */
-fn prp_inv2<G, T>(property1: &mut Property<G, T>, property2: &Property<G, T>)
+pub(crate) fn prp_inv2<G, T>(property1: &mut Property<G, T>, property2: &Property<G, T>)
 where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,
@@ -200,6 +201,7 @@ where
 {
     let derived = property2.stream().map(|(x, y)| (y, x));
     property1.add(derived);
+    // IGNORE; Hangled by TBox expansion via dedup
 }
 
 /*
@@ -216,7 +218,7 @@ T(?y, ?pn, ?zn)
 =>
 T(?x, owl:sameAs, ?y)
  */
-fn prp_key<G, T>(
+pub(crate) fn prp_key<G, T>(
     property_list: Vec<&Property<G, T>>,
     class: &Class<G, T>,
     same_as: &mut SameAs<G, T>,

@@ -23,7 +23,7 @@ T(?y, rdf:type, ?cn)
 =>
 T(?y, rdf:type, ?c)
 */
-fn cls_int1<G, T>(class_list: Vec<&Class<G, T>>, target_class: &mut Class<G, T>)
+pub(crate) fn cls_int1<G, T>(class_list: Vec<&Class<G, T>>, target_class: &mut Class<G, T>)
 where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,
@@ -47,6 +47,7 @@ where
     target_class.add(matches.map(|(x, ())| x));
 }
 
+#[allow(dead_code)]
 /*
 T(?c, owl:intersectionOf, ?x)
 LIST[?x, ?c1, ..., ?cn]
@@ -57,7 +58,7 @@ T(?y, rdf:type, ?c2)
 ...
 T(?y, rdf:type, ?cn)
  */
-fn cls_int2<G, T>(mut class_list: Vec<&mut Class<G, T>>, target_class: &Class<G, T>)
+pub(crate) fn cls_int2<G, T>(mut class_list: Vec<&mut Class<G, T>>, target_class: &Class<G, T>)
 where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,
@@ -80,7 +81,7 @@ T(?v, rdf:type, ?y)
 =>
 T(?u, rdf:type, ?x)
  */
-fn cls_svf1<G, T>(property: &Property<G, T>, class: &Class<G, T>, target_class: &mut Class<G, T>)
+pub(crate) fn cls_svf1<G, T>(property: &Property<G, T>, class: &Class<G, T>, target_class: &mut Class<G, T>)
 where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,
@@ -107,7 +108,7 @@ T(?u, ?p, ?v)
 =>
 T(?u, rdf:type, ?x)
  */
-fn cls_svf2<G, T>(property: &Property<G, T>, target_class: &mut Class<G, T>)
+pub(crate) fn cls_svf2<G, T>(property: &Property<G, T>, target_class: &mut Class<G, T>)
 where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,
@@ -124,7 +125,7 @@ T(?u, ?p, ?v)
 =>
 T(?v, rdf:type, ?y)
  */
-fn cls_avf<G, T>(class: &Class<G, T>, property: &Property<G, T>, target_class: &mut Class<G, T>)
+pub(crate) fn cls_avf<G, T>(class: &Class<G, T>, property: &Property<G, T>, target_class: &mut Class<G, T>)
 where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,
@@ -151,7 +152,7 @@ T(?u, rdf:type, ?x)
 =>
 T(?u, ?p, ?y)
  */
-fn cls_hv1<G, T>(value: &[IRI], class: &Class<G, T>, property: &mut Property<G, T>)
+pub(crate) fn cls_hv1<G, T>(value: &[IRI], class: &Class<G, T>, property: &mut Property<G, T>)
 where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,
@@ -173,7 +174,7 @@ T(?u, ?p, ?y)
 =>
 T(?u, rdf:type, ?x)
 */
-fn cls_hv2<G, T>(value: &[IRI], property: &Property<G, T>, class: &mut Class<G, T>)
+pub(crate) fn cls_hv2<G, T>(value: &[IRI], property: &Property<G, T>, class: &mut Class<G, T>)
 where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,
@@ -202,7 +203,7 @@ T(?u, rdf:type, ?x)
 =>
 T(?y1, owl:sameAs, ?y2)
  */
-fn cls_maxc2<G, T>(property: &Property<G, T>, class: &Class<G, T>, same_as: &mut SameAs<G, T>)
+pub(crate) fn cls_maxc2<G, T>(property: &Property<G, T>, class: &Class<G, T>, same_as: &mut SameAs<G, T>)
 where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,
@@ -248,7 +249,7 @@ T(?u, rdf:type, ?x)
 =>
 T(?y1, owl:sameAs, ?y2)
  */
-fn cls_maxqc3<G, T>(
+pub(crate) fn cls_maxqc3<G, T>(
     property: &Property<G, T>,
     class_x: &Class<G, T>,
     class_c: &Class<G, T>,
@@ -360,7 +361,7 @@ T(?y1, rdf:type, ?c)
 ...
 T(?yn, rdf:type, ?c)
  */
-fn cls_oo<G, T>(mut class_list: Vec<&mut Class<G, T>>, target_class: &Class<G, T>)
+pub(crate) fn cls_oo<G, T>(mut class_list: Vec<&mut Class<G, T>>, target_class: &Class<G, T>)
 where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,

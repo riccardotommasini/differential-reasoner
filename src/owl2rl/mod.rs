@@ -1,5 +1,8 @@
+pub mod build_dataflow;
 pub(crate) mod class_rules;
+pub(crate) mod consolidate_stream_aggressively;
 pub(crate) mod property_rules;
+
 use std::lazy::OnceCell;
 
 use differential_dataflow::operators::arrange::{arrangement::ArrangeBySelf, Arranged, TraceAgent};
@@ -10,6 +13,8 @@ use differential_dataflow::{
 
 use dogsdogsdogs::altneu::AltNeu;
 use dogsdogsdogs::CollectionIndex;
+use timely::communication::message::RefOrMut::{Mut, Ref};
+
 use timely::{
     dataflow::{Scope, ScopeParent},
     progress::Timestamp,

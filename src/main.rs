@@ -1,15 +1,20 @@
 use differential_dataflow::trace::cursor::CursorDebug;
 use differential_dataflow::trace::TraceReader;
+use differential_dataflow::AsCollection;
 
 use differential_dataflow::input::Input;
 use differential_dataflow::operators::arrange::ArrangeBySelf;
+use differential_dataflow::operators::Consolidate;
 use differential_reasoner::load_encode_triples::load3enc;
 use differential_reasoner::materializations::*;
 use timely::dataflow::operators::probe::Handle;
+use timely::dataflow::operators::Map;
 
 use clap::{App, Arg};
-use lasso::{Key, Rodeo};
+use lasso::{Key, Rodeo, Spur};
+use std::collections::hash_map::DefaultHasher;
 use std::fs::File;
+use std::hash::BuildHasherDefault;
 use std::io::{BufRead, BufReader};
 use std::time::Instant;
 
@@ -81,17 +86,122 @@ fn main() {
     let now = Instant::now();
 
     let summaries = timely::execute(timely::Config::process(workers), move |worker| {
+        let mut grand_ole_pry =
+            Rodeo::<Spur, BuildHasherDefault<DefaultHasher>>::with_hasher(Default::default());
         let mut tbox_probe = Handle::new();
         let mut abox_probe = Handle::new();
+        let mut tbox = None;
+
+        if let true = encode {
+            let tbox_raw = load3nt(&t_path);
+
+            let rdfsco: &str = "<http://www.w3.org/2000/01/rdf-schema#subClassOf>";
+            let rdfspo: &str = "<http://www.w3.org/2000/01/rdf-schema#subPropertyOf>";
+            let rdfsd: &str = "<http://www.w3.org/2000/01/rdf-schema#domain>";
+            let rdfsr: &str = "<http://www.w3.org/2000/01/rdf-schema#range>";
+            let rdft: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>";
+            let owltr: &str = "<http://www.w3.org/2002/07/owl#TransitiveProperty>";
+            let owlio: &str = "<http://www.w3.org/2002/07/owl#inverseOf>";
+
+            let _owlthing: &str = "<http://www.w3.org/2002/07/owl#Thing>";
+            let _rdfcomment: &str = "<http://www.w3.org/2000/01/rdf-schema#comment>";
+            let _rdfrest: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#rest>";
+            let _rdffirst: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#first>";
+            let _owlmqc: &str = "<http://www.w3.org/2002/07/owl#maxQualifiedCardinality>";
+            let _owlsvf: &str = "<http://www.w3.org/2002/07/owl#someValuesFrom>";
+            let _owlec: &str = "<http://www.w3.org/2002/07/owl#equivalentClass>";
+            let _owlito: &str = "<http://www.w3.org/2002/07/owl#intersectionOf>";
+            let _owlm: &str = "<http://www.w3.org/2002/07/owl#members>";
+            let _owlep: &str = "<http://www.w3.org/2002/07/owl#equivalentProperty>";
+            let _owlop: &str = "<http://www.w3.org/2002/07/owl#onProperty>";
+            let _owlpca: &str = "<http://www.w3.org/2002/07/owl#propertyChainAxiom>";
+            let _owldw: &str = "<http://www.w3.org/2002/07/owl#disjointWith>";
+            let _owlpdw: &str = "<http://www.w3.org/2002/07/owl#propertyDisjointWith>";
+            let _owluo: &str = "<http://www.w3.org/2002/07/owl#unionOf>";
+            let _rdfl: &str = "<http://www.w3.org/2000/01/rdf-schema#label>";
+            let _owlhk: &str = "<http://www.w3.org/2002/07/owl#hasKey>";
+            let _owlavf: &str = "<http://www.w3.org/2002/07/owl#allValuesFrom>";
+            let _owlco: &str = "<http://www.w3.org/2002/07/owl#complementOf>";
+            let _owloc: &str = "<http://www.w3.org/2002/07/owl#onClass>";
+            let _owldm: &str = "<http://www.w3.org/2002/07/owl#distinctMembers>";
+            let _owlfp: &str = "<http://www.w3.org/2002/07/owl#FunctionalProperty>";
+            let _owlni: &str = "<http://www.w3.org/2002/07/owl#NamedIndividual>";
+            let _owlop: &str = "<http://www.w3.org/2002/07/owl#ObjectProperty>";
+            let _rdfn: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#nil>";
+            let _owlc: &str = "<http://www.w3.org/2002/07/owl#Class>";
+            let _xmlonenni: &str = "\"1\"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger>";
+            let _xmlzeronni: &str = "\"0\"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger>";
+            let _owladc: &str = "<http://www.w3.org/2002/07/owl#AllDisjointClasses>";
+            let _owlr: &str = "<http://www.w3.org/2002/07/owl#Restriction>";
+            let _owldp: &str = "<http://www.w3.org/2002/07/owl#DatatypeProperty>";
+            let _rdfl: &str = "<http://www.w3.org/2000/01/rdf-schema#Literal>";
+            let _owlo: &str = "<http://www.w3.org/2002/07/owl#Ontology>";
+            let _owlap: &str = "<http://www.w3.org/2002/07/owl#AsymmetricProperty>";
+            let _owlsp: &str = "<http://www.w3.org/2002/07/owl#SymmetricProperty>";
+            let _owlip: &str = "<http://www.w3.org/2002/07/owl#IrreflexiveProperty>";
+            let _owlad: &str = "<http://www.w3.org/2002/07/owl#AllDifferent>";
+            let _owlifp: &str = "<http://www.w3.org/2002/07/owl#InverseFunctionalProperty>";
+            let _owlsa: &str = "<http://www.w3.org/2002/07/owl#sameAs>";
+
+            grand_ole_pry.get_or_intern(rdfsco);
+            grand_ole_pry.get_or_intern(rdfspo);
+            grand_ole_pry.get_or_intern(rdfsd);
+            grand_ole_pry.get_or_intern(rdfsr);
+            grand_ole_pry.get_or_intern(rdft);
+            grand_ole_pry.get_or_intern(owltr);
+            grand_ole_pry.get_or_intern(owlio);
+
+            tbox = Some(
+                tbox_raw
+                    .map(|triple| {
+                        let s = &triple.0[..];
+                        let p = &triple.1[..];
+                        let o = &triple.2[..];
+
+                        let key_s = grand_ole_pry.get_or_intern(s);
+                        let key_p = grand_ole_pry.get_or_intern(p);
+                        let key_o = grand_ole_pry.get_or_intern(o);
+
+                        let key_s_int = key_s.into_usize();
+                        let key_p_int = key_p.into_usize();
+                        let key_o_int = key_o.into_usize();
+                        (key_s_int, key_p_int, key_o_int)
+                    })
+                    .collect::<Vec<_>>(),
+            );
+        }
 
         let (mut tbox_input_stream, mut abox_input_stream, mut tbox_trace, mut abox_trace) = worker
-            .dataflow::<usize, _, _>(|outer| {
+            .dataflow::<u64, _, _>(|outer| {
                 let (mut _abox_in, abox) = outer.new_collection::<(usize, usize, usize), isize>();
-                let (mut _tbox_in, tbox) = outer.new_collection::<(usize, usize, usize), isize>();
 
-                let (tbox, abox) = match &expressivity[..] {
-                    "rdfs" => rdfs(&tbox, &abox, outer),
-                    _ => rdfspp(&tbox, &abox, outer),
+                println!("T-box location: {}", &t_path);
+
+                let (_tbox_in, (tbox, abox)) = match &expressivity[..] {
+                    "rdfs" => {
+                        let (mut _tbox_in, tbox_collection) =
+                            outer.new_collection::<(usize, usize, usize), isize>();
+                        (Some(_tbox_in), rdfs(&tbox_collection, &abox, outer))
+                    }
+                    "owl2rl" => differential_reasoner::owl2rl::build_dataflow::digest_tbox(
+                        (&tbox).as_ref().unwrap().iter().cloned(),
+                        abox.clone(),
+                    )
+                    .map(|abox_out_raw| {
+                        let tbox_out = abox.clone();
+                        let abox_out = abox_out_raw
+                            .consolidate()
+                            .inner
+                            .map(|((s, p, o), t, _r)| ((s as usize, p as usize, o as usize), t, 1))
+                            .as_collection();
+                        (None, (tbox_out, abox_out))
+                    })
+                    .unwrap(),
+                    _ => {
+                        let (mut _tbox_in, tbox) =
+                            outer.new_collection::<(usize, usize, usize), isize>();
+                        (Some(_tbox_in), rdfspp(&tbox, &abox, outer))
+                    }
                 };
 
                 tbox.probe_with(&mut tbox_probe);
@@ -102,88 +212,17 @@ fn main() {
 
                 (_tbox_in, _abox_in, tbox_arr.trace, abox_arr.trace)
             });
-
-        if 0 == worker.index() {
-            if let true = encode {
+        if let Some(tbox) = tbox {
+            if 0 == worker.index() {
                 let abox = load3nt(&a_path);
                 println!("A-box location: {}", &a_path);
-                let tbox = load3nt(&t_path);
-                println!("T-box location: {}", &t_path);
 
-                let mut grand_ole_pry = Rodeo::default();
+                if let Some(ref mut tbox_input_stream) = tbox_input_stream {
+                    tbox.iter().for_each(|&triple| {
+                        tbox_input_stream.insert(triple);
+                    });
+                }
 
-                let rdfsco: &str = "<http://www.w3.org/2000/01/rdf-schema#subClassOf>";
-                let rdfspo: &str = "<http://www.w3.org/2000/01/rdf-schema#subPropertyOf>";
-                let rdfsd: &str = "<http://www.w3.org/2000/01/rdf-schema#domain>";
-                let rdfsr: &str = "<http://www.w3.org/2000/01/rdf-schema#range>";
-                let rdft: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>";
-                let owltr: &str = "<http://www.w3.org/2002/07/owl#TransitiveProperty>";
-                let owlio: &str = "<http://www.w3.org/2002/07/owl#inverseOf>";
-
-                let _owlthing: &str = "<http://www.w3.org/2002/07/owl#Thing>";
-                let _rdfcomment: &str = "<http://www.w3.org/2000/01/rdf-schema#comment>";
-                let _rdfrest: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#rest>";
-                let _rdffirst: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#first>";
-                let _owlmqc: &str = "<http://www.w3.org/2002/07/owl#maxQualifiedCardinality>";
-                let _owlsvf: &str = "<http://www.w3.org/2002/07/owl#someValuesFrom>";
-                let _owlec: &str = "<http://www.w3.org/2002/07/owl#equivalentClass>";
-                let _owlito: &str = "<http://www.w3.org/2002/07/owl#intersectionOf>";
-                let _owlm: &str = "<http://www.w3.org/2002/07/owl#members>";
-                let _owlep: &str = "<http://www.w3.org/2002/07/owl#equivalentProperty>";
-                let _owlop: &str = "<http://www.w3.org/2002/07/owl#onProperty>";
-                let _owlpca: &str = "<http://www.w3.org/2002/07/owl#propertyChainAxiom>";
-                let _owldw: &str = "<http://www.w3.org/2002/07/owl#disjointWith>";
-                let _owlpdw: &str = "<http://www.w3.org/2002/07/owl#propertyDisjointWith>";
-                let _owluo: &str = "<http://www.w3.org/2002/07/owl#unionOf>";
-                let _owll: &str = "<http://www.w3.org/2000/01/rdf-schema#label>";
-                let _owlhk: &str = "<http://www.w3.org/2002/07/owl#hasKey>";
-                let _owlavf: &str = "<http://www.w3.org/2002/07/owl#allValuesFrom>";
-                let _owlco: &str = "<http://www.w3.org/2002/07/owl#complementOf>";
-                let _owloc: &str = "<http://www.w3.org/2002/07/owl#onClass>";
-                let _owldm: &str = "<http://www.w3.org/2002/07/owl#distinctMembers>";
-                let _owlfp: &str = "<http://www.w3.org/2002/07/owl#FunctionalProperty>";
-                let _owlni: &str = "<http://www.w3.org/2002/07/owl#NamedIndividual>";
-                let _owlop: &str = "<http://www.w3.org/2002/07/owl#ObjectProperty>";
-                let _rdfn: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#nil>";
-                let _owlc: &str = "<http://www.w3.org/2002/07/owl#Class>";
-                let _xmlonenni: &str =
-                    "\"1\"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger>";
-                let _xmlzeronni: &str =
-                    "\"0\"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger>";
-                let _owladc: &str = "<http://www.w3.org/2002/07/owl#AllDisjointClasses>";
-                let _owlr: &str = "<http://www.w3.org/2002/07/owl#Restriction>";
-                let _owldp: &str = "<http://www.w3.org/2002/07/owl#DatatypeProperty>";
-                let _rdfl: &str = "<http://www.w3.org/2000/01/rdf-schema#Literal>";
-                let _owlo: &str = "<http://www.w3.org/2002/07/owl#Ontology>";
-                let _owlap: &str = "<http://www.w3.org/2002/07/owl#AsymmetricProperty>";
-                let _owlsp: &str = "<http://www.w3.org/2002/07/owl#SymmetricProperty>";
-                let _owlip: &str = "<http://www.w3.org/2002/07/owl#IrreflexiveProperty>";
-                let _owlad: &str = "<http://www.w3.org/2002/07/owl#AllDifferent>";
-                let _owlifp: &str = "<http://www.w3.org/2002/07/owl#InverseFunctionalProperty>";
-
-                grand_ole_pry.get_or_intern(rdfsco);
-                grand_ole_pry.get_or_intern(rdfspo);
-                grand_ole_pry.get_or_intern(rdfsd);
-                grand_ole_pry.get_or_intern(rdfsr);
-                grand_ole_pry.get_or_intern(rdft);
-                grand_ole_pry.get_or_intern(owltr);
-                grand_ole_pry.get_or_intern(owlio);
-
-                tbox.for_each(|triple| {
-                    let s = &triple.0[..];
-                    let p = &triple.1[..];
-                    let o = &triple.2[..];
-
-                    let key_s = grand_ole_pry.get_or_intern(s);
-                    let key_p = grand_ole_pry.get_or_intern(p);
-                    let key_o = grand_ole_pry.get_or_intern(o);
-
-                    let key_s_int = key_s.into_usize();
-                    let key_p_int = key_p.into_usize();
-                    let key_o_int = key_o.into_usize();
-
-                    tbox_input_stream.insert((key_s_int, key_p_int, key_o_int));
-                });
                 abox.for_each(|triple| {
                     let s = &triple.0[..];
                     let p = &triple.1[..];
@@ -199,21 +238,26 @@ fn main() {
 
                     abox_input_stream.insert((key_s_int, key_p_int, key_o_int));
                 });
-            } else {
-                {
-                    let tbox = load3enc(&t_path);
-                    let abox = load3enc(&a_path);
-                    tbox.for_each(|triple| {
-                        tbox_input_stream.insert((triple.0, triple.1, triple.2));
-                    });
-                    abox.for_each(|triple| {
-                        abox_input_stream.insert((triple.0, triple.1, triple.2));
-                    });
-                }
+            }
+        } else {
+            let abox = load3enc(&a_path);
+            if let Some(ref mut tbox_input_stream) = tbox_input_stream {
+                let tbox = load3enc(&t_path);
+                tbox.for_each(|triple| {
+                    tbox_input_stream.insert((triple.0, triple.1, triple.2));
+                });
             };
-        }
-        tbox_input_stream.advance_to(1);
-        tbox_input_stream.flush();
+            if 0 == worker.index() {
+                abox.for_each(|triple| {
+                    abox_input_stream.insert((triple.0, triple.1, triple.2));
+                });
+            }
+        };
+
+        if let Some(ref mut tbox_input_stream) = tbox_input_stream {
+            tbox_input_stream.advance_to(1);
+            tbox_input_stream.flush();
+        };
         worker.step();
         abox_input_stream.advance_to(1);
         abox_input_stream.flush();
