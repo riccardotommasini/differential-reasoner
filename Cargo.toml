@@ -7,7 +7,7 @@ edition = "2018"
 timely = "0.12.0"
 differential-dataflow = { git = "https://github.com/DataSystemsGroupUT/differential-dataflow.git", rev="3e0d68664633f87a38c8385744ff0ef618ef35ae" }
 criterion = "0.3.4"
-lasso = "0.5.0"
+lasso = "0.6.0"
 dogsdogsdogs = { git = "https://github.com/DataSystemsGroupUT/differential-dataflow.git", rev="3e0d68664633f87a38c8385744ff0ef618ef35ae" }
 clap = "3.0.0-beta.4"
 linecount = "0.1.0"

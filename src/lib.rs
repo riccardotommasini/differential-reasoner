@@ -6,11 +6,11 @@ pub mod materializations;
 pub mod owl2rl;
 #[allow(non_upper_case_globals)]
 pub mod constants {
-    pub const MAX_CONST: u32 = 45;
+    pub const MAX_CONST: u32 = 46;
 
     pub mod rdf {
         //                 let _rdfsco: &str = "<http://www.w3.org/2000/01/rdf-schema#subClassOf>";
-        pub const subClassOf: u32 = 0;
+        pub const subClassOf: u32 = 46;
         //                 let _rdfspo: &str = "<http://www.w3.org/2000/01/rdf-schema#subPropertyOf>";
         pub const subPropertyOf: u32 = 1;
         //                 let _rdfsd: &str = "<http://www.w3.org/2000/01/rdf-schema#domain>";
@@ -99,7 +99,7 @@ pub mod constants {
         //                 let _owlifp: &str = "<http://www.w3.org/2002/07/owl#InverseFunctionalProperty>";
         pub const InverseFunctionalProperty: u32 = 44;
         //                 let _owlsa: &str = "<http://www.w3.org/2002/07/owl#sameAs>";
-        pub const sameAs:u32 = 45;
+        pub const sameAs: u32 = 45;
     }
 
     pub mod xml {

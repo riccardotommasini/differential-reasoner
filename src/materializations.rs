@@ -26,6 +26,7 @@ where
 
         let tbox_by_s = tbox.map(|(s, p, o)| (s, (p, o)));
 
+        // TODO: change all magic numbers to use stuff from constants
         let sco_ass_by_o = tbox_by_o.filter(|(_, (p, _))| p == &0usize);
 
         let sco_ass_by_s = sco_ass_by_o.map(|(o, (p, s))| (s, (p, o)));

@@ -7,6 +7,11 @@ use differential_dataflow::operators::arrange::ArrangeBySelf;
 use differential_dataflow::operators::Consolidate;
 use differential_reasoner::load_encode_triples::load3enc;
 use differential_reasoner::materializations::*;
+use differential_reasoner::owl2rl;
+use differential_reasoner::{
+    constants,
+    constants::{owl, rdf, xml},
+};
 use timely::dataflow::operators::probe::Handle;
 use timely::dataflow::operators::Map;
 
@@ -102,54 +107,129 @@ fn main() {
             let rdft: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>";
             let owltr: &str = "<http://www.w3.org/2002/07/owl#TransitiveProperty>";
             let owlio: &str = "<http://www.w3.org/2002/07/owl#inverseOf>";
+            let owlthing: &str = "<http://www.w3.org/2002/07/owl#Thing>";
+            let rdfcomment: &str = "<http://www.w3.org/2000/01/rdf-schema#comment>";
+            let rdfrest: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#rest>";
+            let rdffirst: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#first>";
+            let owlmqc: &str = "<http://www.w3.org/2002/07/owl#maxQualifiedCardinality>";
+            let owlsvf: &str = "<http://www.w3.org/2002/07/owl#someValuesFrom>";
+            let owlec: &str = "<http://www.w3.org/2002/07/owl#equivalentClass>";
+            let owlito: &str = "<http://www.w3.org/2002/07/owl#intersectionOf>";
+            let owlm: &str = "<http://www.w3.org/2002/07/owl#members>";
+            let owlep: &str = "<http://www.w3.org/2002/07/owl#equivalentProperty>";
+            let owloprop: &str = "<http://www.w3.org/2002/07/owl#onProperty>";
+            let owlpca: &str = "<http://www.w3.org/2002/07/owl#propertyChainAxiom>";
+            let owldw: &str = "<http://www.w3.org/2002/07/owl#disjointWith>";
+            let owlpdw: &str = "<http://www.w3.org/2002/07/owl#propertyDisjointWith>";
+            let owluo: &str = "<http://www.w3.org/2002/07/owl#unionOf>";
+            let rdflbl: &str = "<http://www.w3.org/2000/01/rdf-schema#label>";
+            let owlhk: &str = "<http://www.w3.org/2002/07/owl#hasKey>";
+            let owlavf: &str = "<http://www.w3.org/2002/07/owl#allValuesFrom>";
+            let owlco: &str = "<http://www.w3.org/2002/07/owl#complementOf>";
+            let owloc: &str = "<http://www.w3.org/2002/07/owl#onClass>";
+            let owldm: &str = "<http://www.w3.org/2002/07/owl#distinctMembers>";
+            let owlfp: &str = "<http://www.w3.org/2002/07/owl#FunctionalProperty>";
+            let owlni: &str = "<http://www.w3.org/2002/07/owl#NamedIndividual>";
+            let owlobjprop: &str = "<http://www.w3.org/2002/07/owl#ObjectProperty>";
+            let rdfn: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#nil>";
+            let owlc: &str = "<http://www.w3.org/2002/07/owl#Class>";
+            let xmlonenni: &str = "\"1\"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger>";
+            let xmlzeronni: &str = "\"0\"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger>";
+            let owladc: &str = "<http://www.w3.org/2002/07/owl#AllDisjointClasses>";
+            let owlr: &str = "<http://www.w3.org/2002/07/owl#Restriction>";
+            let owldp: &str = "<http://www.w3.org/2002/07/owl#DatatypeProperty>";
+            let rdflit: &str = "<http://www.w3.org/2000/01/rdf-schema#Literal>";
+            let owlo: &str = "<http://www.w3.org/2002/07/owl#Ontology>";
+            let owlap: &str = "<http://www.w3.org/2002/07/owl#AsymmetricProperty>";
+            let owlsp: &str = "<http://www.w3.org/2002/07/owl#SymmetricProperty>";
+            let owlip: &str = "<http://www.w3.org/2002/07/owl#IrreflexiveProperty>";
+            let owlad: &str = "<http://www.w3.org/2002/07/owl#AllDifferent>";
+            let owlifp: &str = "<http://www.w3.org/2002/07/owl#InverseFunctionalProperty>";
+            let owlsa: &str = "<http://www.w3.org/2002/07/owl#sameAs>";
 
-            let _owlthing: &str = "<http://www.w3.org/2002/07/owl#Thing>";
-            let _rdfcomment: &str = "<http://www.w3.org/2000/01/rdf-schema#comment>";
-            let _rdfrest: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#rest>";
-            let _rdffirst: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#first>";
-            let _owlmqc: &str = "<http://www.w3.org/2002/07/owl#maxQualifiedCardinality>";
-            let _owlsvf: &str = "<http://www.w3.org/2002/07/owl#someValuesFrom>";
-            let _owlec: &str = "<http://www.w3.org/2002/07/owl#equivalentClass>";
-            let _owlito: &str = "<http://www.w3.org/2002/07/owl#intersectionOf>";
-            let _owlm: &str = "<http://www.w3.org/2002/07/owl#members>";
-            let _owlep: &str = "<http://www.w3.org/2002/07/owl#equivalentProperty>";
-            let _owlop: &str = "<http://www.w3.org/2002/07/owl#onProperty>";
-            let _owlpca: &str = "<http://www.w3.org/2002/07/owl#propertyChainAxiom>";
-            let _owldw: &str = "<http://www.w3.org/2002/07/owl#disjointWith>";
-            let _owlpdw: &str = "<http://www.w3.org/2002/07/owl#propertyDisjointWith>";
-            let _owluo: &str = "<http://www.w3.org/2002/07/owl#unionOf>";
-            let _rdfl: &str = "<http://www.w3.org/2000/01/rdf-schema#label>";
-            let _owlhk: &str = "<http://www.w3.org/2002/07/owl#hasKey>";
-            let _owlavf: &str = "<http://www.w3.org/2002/07/owl#allValuesFrom>";
-            let _owlco: &str = "<http://www.w3.org/2002/07/owl#complementOf>";
-            let _owloc: &str = "<http://www.w3.org/2002/07/owl#onClass>";
-            let _owldm: &str = "<http://www.w3.org/2002/07/owl#distinctMembers>";
-            let _owlfp: &str = "<http://www.w3.org/2002/07/owl#FunctionalProperty>";
-            let _owlni: &str = "<http://www.w3.org/2002/07/owl#NamedIndividual>";
-            let _owlop: &str = "<http://www.w3.org/2002/07/owl#ObjectProperty>";
-            let _rdfn: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#nil>";
-            let _owlc: &str = "<http://www.w3.org/2002/07/owl#Class>";
-            let _xmlonenni: &str = "\"1\"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger>";
-            let _xmlzeronni: &str = "\"0\"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger>";
-            let _owladc: &str = "<http://www.w3.org/2002/07/owl#AllDisjointClasses>";
-            let _owlr: &str = "<http://www.w3.org/2002/07/owl#Restriction>";
-            let _owldp: &str = "<http://www.w3.org/2002/07/owl#DatatypeProperty>";
-            let _rdfl: &str = "<http://www.w3.org/2000/01/rdf-schema#Literal>";
-            let _owlo: &str = "<http://www.w3.org/2002/07/owl#Ontology>";
-            let _owlap: &str = "<http://www.w3.org/2002/07/owl#AsymmetricProperty>";
-            let _owlsp: &str = "<http://www.w3.org/2002/07/owl#SymmetricProperty>";
-            let _owlip: &str = "<http://www.w3.org/2002/07/owl#IrreflexiveProperty>";
-            let _owlad: &str = "<http://www.w3.org/2002/07/owl#AllDifferent>";
-            let _owlifp: &str = "<http://www.w3.org/2002/07/owl#InverseFunctionalProperty>";
-            let _owlsa: &str = "<http://www.w3.org/2002/07/owl#sameAs>";
-
-            grand_ole_pry.get_or_intern(rdfsco);
-            grand_ole_pry.get_or_intern(rdfspo);
+            assert_eq!(
+                grand_ole_pry.get_or_intern(rdfspo).into_inner().get(),
+                rdf::subPropertyOf
+            );
             grand_ole_pry.get_or_intern(rdfsd);
             grand_ole_pry.get_or_intern(rdfsr);
             grand_ole_pry.get_or_intern(rdft);
             grand_ole_pry.get_or_intern(owltr);
             grand_ole_pry.get_or_intern(owlio);
+            grand_ole_pry.get_or_intern(owlthing);
+            grand_ole_pry.get_or_intern(rdfcomment);
+            grand_ole_pry.get_or_intern(rdfrest);
+            grand_ole_pry.get_or_intern(rdffirst);
+            grand_ole_pry.get_or_intern(owlmqc);
+            assert_eq!(
+                grand_ole_pry.get_or_intern(owlsvf).into_inner().get(),
+                owl::someValuesFrom
+            );
+            grand_ole_pry.get_or_intern(owlec);
+            grand_ole_pry.get_or_intern(owlito);
+            grand_ole_pry.get_or_intern(owlm);
+            grand_ole_pry.get_or_intern(owlep);
+            grand_ole_pry.get_or_intern(owloprop);
+            grand_ole_pry.get_or_intern(owlpca);
+            grand_ole_pry.get_or_intern(owldw);
+            grand_ole_pry.get_or_intern(owlpdw);
+            grand_ole_pry.get_or_intern(owluo);
+            grand_ole_pry.get_or_intern(rdflbl);
+            assert_eq!(
+                grand_ole_pry.get_or_intern(owlhk).into_inner().get(),
+                owl::hasKey
+            );
+            grand_ole_pry.get_or_intern(owlavf);
+            grand_ole_pry.get_or_intern(owlco);
+            assert_eq!(
+                grand_ole_pry.get_or_intern(owloc).into_inner().get(),
+                owl::onClass
+            );
+            grand_ole_pry.get_or_intern(owldm);
+            grand_ole_pry.get_or_intern(owlfp);
+            assert_eq!(
+                grand_ole_pry.get_or_intern(owlni).into_inner().get(),
+                owl::NamedIndividual
+            );
+            assert_eq!(
+                grand_ole_pry.get_or_intern(owlobjprop).into_inner().get(),
+                owl::ObjectProperty
+            );
+            assert_eq!(
+                grand_ole_pry.get_or_intern(rdfn).into_inner().get(),
+                rdf::nil
+            );
+            assert_eq!(
+                grand_ole_pry.get_or_intern(owlc).into_inner().get(),
+                owl::Class
+            );
+            assert_eq!(
+                grand_ole_pry.get_or_intern(xmlonenni).into_inner().get(),
+                xml::nonNegativeInteger_1
+            );
+            grand_ole_pry.get_or_intern(xmlzeronni);
+            grand_ole_pry.get_or_intern(owladc);
+            grand_ole_pry.get_or_intern(owlr);
+            grand_ole_pry.get_or_intern(owldp);
+            grand_ole_pry.get_or_intern(rdflit);
+            assert_eq!(
+                grand_ole_pry.get_or_intern(owlo).into_inner().get(),
+                owl::Ontology
+            );
+            grand_ole_pry.get_or_intern(owlap);
+            grand_ole_pry.get_or_intern(owlsp);
+            grand_ole_pry.get_or_intern(owlip);
+            grand_ole_pry.get_or_intern(owlad);
+            grand_ole_pry.get_or_intern(owlifp);
+            assert_eq!(
+                grand_ole_pry.get_or_intern(owlsa).into_inner().get(),
+                owl::sameAs
+            );
+            assert_eq!(
+                grand_ole_pry.get_or_intern(rdfsco).into_inner().get(),
+                rdf::subClassOf
+            );
+            assert_eq!(rdf::subClassOf, constants::MAX_CONST);
 
             tbox = Some(
                 tbox_raw
