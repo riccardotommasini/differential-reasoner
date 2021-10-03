@@ -78,12 +78,24 @@ fn main() {
                 .required(true)
                 .index(4),
         )
+        .arg(
+            Arg::new("BATCH_SIZE")
+                .required(true)
+                .index(5),
+        )
+        .arg(
+            Arg::new("STEP_COUNT")
+                .required(true)
+                .index(6)
+        )
         .arg(Arg::new("ENCODE").about("Encodes the input").short('e'))
         .get_matches();
 
     let t_path: String = matches.value_of("TBOX_PATH").unwrap().to_string();
     let a_path: String = matches.value_of("ABOX_PATH").unwrap().to_string();
     let expressivity: String = matches.value_of("EXPRESSIVITY").unwrap().to_string();
+    let batch_size: u32 = matches.value_of("BATCH_SIZE").unwrap().parse().unwrap();
+    let step_count: u64 = matches.value_of("STEP_COUNT").unwrap().parse().unwrap();
     let workers: usize = matches
         .value_of("WORKERS")
         .unwrap()
@@ -316,7 +328,7 @@ fn main() {
                     tbox_input_stream.close();
                 }
 
-                const BATCH_SIZE: u32 = 128;
+                let BATCH_SIZE: u32 = batch_size;   //100000;
 
                 let mut iteration_count = 0;
 
@@ -341,7 +353,7 @@ fn main() {
                         }
                     }
                     let worker_index = worker.index();
-                    const STEP_COUNT: u64 = 10;
+                    let STEP_COUNT: u64 = step_count;
                     abox_input_stream.advance_to(abox_input_stream.epoch() + STEP_COUNT/*(u32::MAX as u64)*/);
                     abox_input_stream.flush();
                     for _ in 0..STEP_COUNT {
@@ -403,16 +415,20 @@ fn main() {
                     worker_index, iteration_count, &frontier
                 );
             });
+            let frontier = abox_probe.with_frontier(|x| (*x).to_owned());
             iteration_count += 1;
-            abox_probe.less_than(&abox_input_stream_time)
+            //abox_probe.less_than(&abox_input_stream_time)
+            !abox_probe.done()
         });
         println!("{}-post-abox-probe-loop", worker.index());
         let (mut tbox_cursor, tbox_storage) = tbox_trace.cursor();
         let (mut abox_cursor, abox_storage) = abox_trace.cursor();
-        (
+        let vectors = (
             tbox_cursor.to_vec(&tbox_storage),
             abox_cursor.to_vec(&abox_storage),
-        )
+        );
+        println!("{}-post-cursor.to_vec", worker_index);
+        vectors
     })
     .unwrap()
     .join();
