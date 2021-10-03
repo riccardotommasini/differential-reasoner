@@ -1,9 +1,11 @@
-use differential_dataflow::{difference::Present, lattice::Lattice, ExchangeData};
-use dogsdogsdogs::{altneu::AltNeu, operators::lookup_map, ProposeExtensionMethod};
+use differential_dataflow::{lattice::Lattice, ExchangeData};
+use dogsdogsdogs::{ProposeExtensionMethod};
 use timely::{
     dataflow::{Scope, ScopeParent},
     progress::Timestamp,
 };
+
+use crate::owl2rl::{AltNeu, IRI};
 
 use super::{Class, Property, SameAs};
 
@@ -13,7 +15,17 @@ where
     G: ScopeParent<Timestamp = AltNeu<T>>,
     T: Lattice + ExchangeData + Timestamp,
 {
-    class.add(property.stream().map(|(x, _y)| x));
+    class.add(
+        property
+            .stream()
+            .map(|(x, _y)| x)
+            .inspect_batch(|capability, records| {
+                println!(
+                    "prp_dom: capability={:?}, records: {:?}",
+                    capability, records
+                );
+            }),
+    );
 }
 
 pub(crate) fn prp_rng<G, T>(property: &Property<G, T>, class: &mut Class<G, T>)
@@ -22,7 +34,17 @@ where
     G: ScopeParent<Timestamp = AltNeu<T>>,
     T: Lattice + ExchangeData + Timestamp,
 {
-    class.add(property.stream().map(|(_x, y)| y));
+    class.add(
+        property
+            .stream()
+            .map(|(_x, y)| y)
+            .inspect_batch(|capability, records| {
+                println!(
+                    "prp_rng: capability={:?}, records: {:?}",
+                    capability, records
+                );
+            }),
+    );
 }
 
 /*
@@ -42,7 +64,13 @@ where
     let derived = property
         .stream()
         .propose_using(&mut property.by_s_alt().extend_using(|&(x, _y1)| x))
-        .map(|((_x, y1), y2)| (y1, y2));
+        .map(|((_x, y1), y2)| (y1, y2))
+        .inspect_batch(|capability, records| {
+            println!(
+                "prp_fp: capability={:?}, records: {:?}",
+                capability, records
+            );
+        });
     same_as.add(derived);
 }
 
@@ -62,7 +90,13 @@ where
     let derived = property
         .stream()
         .propose_using(&mut property.by_o_alt().extend_using(|&(_x1, y)| y))
-        .map(|((x1, _y), x2)| (x1, x2));
+        .map(|((x1, _y), x2)| (x1, x2))
+        .inspect_batch(|capability, records| {
+            println!(
+                "prp_ifp: capability={:?}, records: {:?}",
+                capability, records
+            );
+        });
     same_as.add(derived);
 }
 
@@ -78,7 +112,15 @@ where
     G: ScopeParent<Timestamp = AltNeu<T>>,
     T: Lattice + ExchangeData + Timestamp,
 {
-    let derived = property.stream().map(|(x, y)| (y, x));
+    let derived = property
+        .stream()
+        .map(|(x, y)| (y, x))
+        .inspect_batch(|capability, records| {
+            println!(
+                "prp_symp: capability={:?}, records: {:?}",
+                capability, records
+            );
+        });
     property.add(derived);
 }
 
@@ -98,12 +140,24 @@ where
     let d_xpy = property
         .stream()
         .propose_using(&mut property.by_s_alt().extend_using(|&(_x, y)| y))
-        .map(|((x, _y), z)| (x, z));
+        .map(|((x, _y), z)| (x, z))
+        .inspect_batch(|capability, records| {
+            println!(
+                "prp_trp_dxpy: capability={:?}, records: {:?}",
+                capability, records
+            );
+        });
 
     let d_ypz = property
         .stream()
         .propose_using(&mut property.by_o_alt().extend_using(|&(y, _z)| y))
-        .map(|((_y, z), x)| (x, z));
+        .map(|((_y, z), x)| (x, z))
+        .inspect_batch(|capability, records| {
+            println!(
+                "prp_trp_dxpy: capability={:?}, records: {:?}",
+                capability, records
+            );
+        });
 
     property.add(d_xpy);
     property.add(d_ypz);
@@ -121,7 +175,17 @@ where
     G: ScopeParent<Timestamp = AltNeu<T>>,
     T: Lattice + ExchangeData + Timestamp,
 {
-    property2.add(property1.stream().clone());
+    property2.add(
+        property1
+            .stream()
+            .clone()
+            .inspect_batch(|capability, records| {
+                println!(
+                    "prp_spo1: capability={:?}, records: {:?}",
+                    capability, records
+                );
+            }),
+    );
 }
 
 /*
@@ -134,8 +198,10 @@ T(?un, ?pn, ?un+1)
 =>
 T(?u1, ?p, ?un+1)
  */
-pub(crate) fn prp_spo2<G, T>(property_chain: Vec<&Property<G, T>>, target_property: &mut Property<G, T>)
-where
+pub(crate) fn prp_spo2<G, T>(
+    property_chain: Vec<&Property<G, T>>,
+    target_property: &mut Property<G, T>,
+) where
     G: Scope,
     G: ScopeParent<Timestamp = AltNeu<T>>,
     T: Lattice + ExchangeData + Timestamp,
@@ -166,7 +232,13 @@ where
                 .map(|((u_0, _u_j), u_j_plus1)| (u_0, u_j_plus1));
         }
 
-        target_property.add(d_prop_i);
+        let i = i;
+        target_property.add(d_prop_i.inspect_batch(move |capability, records| {
+            println!(
+                "prp_spo2: i={}, capability={:?}, records: {:?}",
+                i, capability, records
+            );
+        }));
     }
 }
 
@@ -182,7 +254,15 @@ where
     G: ScopeParent<Timestamp = AltNeu<T>>,
     T: Lattice + ExchangeData + Timestamp,
 {
-    let derived = property1.stream().map(|(x, y)| (y, x));
+    let derived = property1
+        .stream()
+        .map(|(x, y)| (y, x))
+        .inspect_batch(|capability, records| {
+            println!(
+                "prp_inv1: capability={:?}, records: {:?}",
+                capability, records
+            );
+        });
     property2.add(derived);
 }
 
@@ -199,7 +279,15 @@ where
     G: ScopeParent<Timestamp = AltNeu<T>>,
     T: Lattice + ExchangeData + Timestamp,
 {
-    let derived = property2.stream().map(|(x, y)| (y, x));
+    let derived = property2
+        .stream()
+        .map(|(x, y)| (y, x))
+        .inspect_batch(|capability, records| {
+            println!(
+                "prp_inv2: capability={:?}, records: {:?}",
+                capability, records
+            );
+        });
     property1.add(derived);
     // IGNORE; Hangled by TBox expansion via dedup
 }
@@ -235,8 +323,14 @@ pub(crate) fn prp_key<G, T>(
 
     let p0 = property_list[0];
 
-    // TODO: Use common extender_alt() system to share underlying
-    let d_xp0 = lookup_map(
+    let d_xp0 = {
+        p0.stream()
+            .propose_using(&mut class.extender_alt().extend_using(|&(x, _z0)| x))
+            .map(|((x, z0), ()): ((IRI, IRI), ())| (x, z0))
+    };
+
+    /*
+    let d_xp0_ = lookup_map(
         p0.stream(),
         class.alt().clone(),
         move |&(x, _z0), key| {
@@ -247,12 +341,19 @@ pub(crate) fn prp_key<G, T>(
         Default::default(),
         Default::default(),
     );
+    */
 
-    let d_xc = class
-        .stream()
-        .propose_using(&mut p0.by_s_alt().extend_using(|&x| x))
-        .concat(&d_xp0)
-        .propose_using(&mut p0.by_o_alt().extend_using(|&(_x, z0)| z0));
+    let d_xc = {
+        class
+            .stream()
+            .propose_using(&mut p0.by_s_alt().extend_using(|&x| x))
+            .concat(&d_xp0)
+            .propose_using(&mut p0.by_o_alt().extend_using(|&(_x, z0)| z0))
+            .flat_map(|((x, _z0), y)| if x == y { None } else { Some((y, x)) })
+            .propose_using(&mut class.extender_alt().extend_using(|&(y, _x)| y))
+            .map(|((y, x), ()): ((IRI, IRI), ())| (std::cmp::min(x, y), std::cmp::max(x, y)))
+    };
+    /*
     let d_xc = lookup_map(
         &d_xc,
         class.alt().clone(),
@@ -264,6 +365,12 @@ pub(crate) fn prp_key<G, T>(
         Default::default(),
         Default::default(),
     );
+    */
 
-    same_as.add(d_xc);
+    same_as.add(d_xc.inspect_batch(|capability, records| {
+        println!(
+            "prp_key: capability={:?}, records: {:?}",
+            capability, records
+        );
+    }));
 }

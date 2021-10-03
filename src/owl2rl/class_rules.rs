@@ -1,15 +1,14 @@
 use std::cmp::Ordering::{Equal, Greater, Less};
 
 use differential_dataflow::{collection::concatenate, lattice::Lattice, ExchangeData};
-use dogsdogsdogs::{
-    altneu::AltNeu, PrefixExtender, ProposeExtensionMethod, ValidateExtensionMethod,
+use dogsdogsdogs::{PrefixExtender, ProposeExtensionMethod, ValidateExtensionMethod,
 };
 use timely::{
     dataflow::{Scope, ScopeParent},
     progress::Timestamp,
 };
 
-use crate::owl2rl::IRI;
+use crate::owl2rl::{AltNeu, IRI};
 
 use super::{Class, Property, SameAs};
 
@@ -26,7 +25,7 @@ T(?y, rdf:type, ?c)
 pub(crate) fn cls_int1<G, T>(class_list: Vec<&Class<G, T>>, target_class: &mut Class<G, T>)
 where
     G: Scope,
-    G: ScopeParent<Timestamp = AltNeu<T>>,
+    G: ScopeParent<Timestamp = T>,
     T: Lattice + ExchangeData + Timestamp,
 {
     let extenders = class_list
@@ -44,7 +43,16 @@ where
         matches = matches.validate_using(&mut validator);
     }
 
-    target_class.add(matches.map(|(x, ())| x));
+    target_class.add(
+        matches
+            .map(|(x, ())| x)
+            .inspect_batch(|capability, records| {
+                println!(
+                    "cls_int1: capability={:?}, records: {:?}",
+                    capability, records
+                );
+            }),
+    );
 }
 
 #[allow(dead_code)]
@@ -61,12 +69,13 @@ T(?y, rdf:type, ?cn)
 pub(crate) fn cls_int2<G, T>(mut class_list: Vec<&mut Class<G, T>>, target_class: &Class<G, T>)
 where
     G: Scope,
-    G: ScopeParent<Timestamp = AltNeu<T>>,
+    G: ScopeParent<Timestamp = T>,
     T: Lattice + ExchangeData + Timestamp,
 {
     for ref mut c_i in class_list.iter_mut() {
         c_i.add(target_class.stream().clone());
     }
+    panic!("This should be handled via TBox expansion and sco");
     // IGNORE; Handled by TBox expansion via sco
 }
 
@@ -81,23 +90,38 @@ T(?v, rdf:type, ?y)
 =>
 T(?u, rdf:type, ?x)
  */
-pub(crate) fn cls_svf1<G, T>(property: &Property<G, T>, class: &Class<G, T>, target_class: &mut Class<G, T>)
-where
+pub(crate) fn cls_svf1<G, T>(
+    property: &Property<G, T>,
+    class: &Class<G, T>,
+    target_class: &mut Class<G, T>,
+) where
     G: Scope,
-    G: ScopeParent<Timestamp = AltNeu<T>>,
+    G: ScopeParent<Timestamp = T>,
     T: Lattice + ExchangeData + Timestamp,
 {
     target_class.add(
         property
             .stream()
             .propose_using(&mut class.extender_neu().extend_using(|&(_u, v)| v))
-            .map(|((u, _v), ())| u),
+            .map(|((u, _v), ())| u)
+            .inspect_batch(|capability, records| {
+                println!(
+                    "cls_svf1_duv: capability={:?}, records: {:?}",
+                    capability, records
+                );
+            }),
     );
     target_class.add(
         class
             .stream()
             .propose_using(&mut property.by_o_alt().extend_using(|&v| v))
-            .map(|(_v, u)| u),
+            .map(|(_v, u)| u)
+            .inspect_batch(|capability, records| {
+                println!(
+                    "cls_svf1_dvy: capability={:?}, records: {:?}",
+                    capability, records
+                );
+            }),
     );
 }
 
@@ -111,10 +135,20 @@ T(?u, rdf:type, ?x)
 pub(crate) fn cls_svf2<G, T>(property: &Property<G, T>, target_class: &mut Class<G, T>)
 where
     G: Scope,
-    G: ScopeParent<Timestamp = AltNeu<T>>,
+    G: ScopeParent<Timestamp = T>,
     T: Lattice + ExchangeData + Timestamp,
 {
-    target_class.add(property.stream().map(|(u, _v)| u));
+    target_class.add(
+        property
+            .stream()
+            .map(|(u, _v)| u)
+            .inspect_batch(|capability, records| {
+                println!(
+                    "cls_svf2: capability={:?}, records: {:?}",
+                    capability, records
+                );
+            }),
+    );
 }
 
 /*
@@ -125,23 +159,38 @@ T(?u, ?p, ?v)
 =>
 T(?v, rdf:type, ?y)
  */
-pub(crate) fn cls_avf<G, T>(class: &Class<G, T>, property: &Property<G, T>, target_class: &mut Class<G, T>)
-where
+pub(crate) fn cls_avf<G, T>(
+    class: &Class<G, T>,
+    property: &Property<G, T>,
+    target_class: &mut Class<G, T>,
+) where
     G: Scope,
-    G: ScopeParent<Timestamp = AltNeu<T>>,
+    G: ScopeParent<Timestamp = T>,
     T: Lattice + ExchangeData + Timestamp,
 {
     target_class.add(
         class
             .stream()
             .propose_using(&mut property.by_s_neu().extend_using(|&u| u))
-            .map(|(_u, v)| v),
+            .map(|(_u, v)| v)
+            .inspect_batch(|capability, records| {
+                println!(
+                    "cls_avf_dux: capability={:?}, records: {:?}",
+                    capability, records
+                );
+            }),
     );
     target_class.add(
         property
             .stream()
             .propose_using(&mut class.extender_alt().extend_using(|&(u, _v)| u))
-            .map(|((_u, v), ())| v),
+            .map(|((_u, v), ())| v)
+            .inspect_batch(|capability, records| {
+                println!(
+                    "cls_avf_dupv: capability={:?}, records: {:?}",
+                    capability, records
+                );
+            }),
     );
 }
 
@@ -155,7 +204,7 @@ T(?u, ?p, ?y)
 pub(crate) fn cls_hv1<G, T>(value: &[IRI], class: &Class<G, T>, property: &mut Property<G, T>)
 where
     G: Scope,
-    G: ScopeParent<Timestamp = AltNeu<T>>,
+    G: ScopeParent<Timestamp = T>,
     T: Lattice + ExchangeData + Timestamp,
 {
     let value = value.to_owned();
@@ -163,7 +212,13 @@ where
     property.add(
         class
             .stream()
-            .flat_map(move |u| value.iter().map(move |&y| (u, y))),
+            .flat_map(move |u| value.iter().map(move |&y| (u, y)))
+            .inspect_batch(move |capability, records| {
+                println!(
+                    "cls_hv1: values={:?}, capability={:?}, records: {:?}",
+                    value, capability, records
+                );
+            }),
     );
 }
 
@@ -177,7 +232,7 @@ T(?u, rdf:type, ?x)
 pub(crate) fn cls_hv2<G, T>(value: &[IRI], property: &Property<G, T>, class: &mut Class<G, T>)
 where
     G: Scope,
-    G: ScopeParent<Timestamp = AltNeu<T>>,
+    G: ScopeParent<Timestamp = T>,
     T: Lattice + ExchangeData + Timestamp,
 {
     let mut value = value.to_owned();
@@ -190,6 +245,12 @@ where
             .flat_map(move |(u, y)| match value.binary_search(&y) {
                 Ok(_) => Some(u),
                 Err(_) => None,
+            })
+            .inspect_batch(move |capability, records| {
+                println!(
+                    "cls_hv2: values={:?}, capability={:?}, records: {:?}",
+                    value, capability, records
+                );
             }),
     );
 }
@@ -203,10 +264,13 @@ T(?u, rdf:type, ?x)
 =>
 T(?y1, owl:sameAs, ?y2)
  */
-pub(crate) fn cls_maxc2<G, T>(property: &Property<G, T>, class: &Class<G, T>, same_as: &mut SameAs<G, T>)
-where
+pub(crate) fn cls_maxc2<G, T>(
+    property: &Property<G, T>,
+    class: &Class<G, T>,
+    same_as: &mut SameAs<G, T>,
+) where
     G: Scope,
-    G: ScopeParent<Timestamp = AltNeu<T>>,
+    G: ScopeParent<Timestamp = T>,
     T: Lattice + ExchangeData + Timestamp,
 {
     let d_ux = {
@@ -232,8 +296,18 @@ where
                 Equal | Greater => None,
             })
     };
-    same_as.add(d_ux);
-    same_as.add(d_upy);
+    same_as.add(d_ux.inspect_batch(|capability, records| {
+        println!(
+            "cls_maxc2_dux: capability={:?}, records: {:?}",
+            capability, records
+        );
+    }));
+    same_as.add(d_upy.inspect_batch(|capability, records| {
+        println!(
+            "cls_maxc2_dupy: capability={:?}, records: {:?}",
+            capability, records
+        );
+    }));
 }
 
 #[allow(clippy::type_complexity)]
@@ -256,7 +330,7 @@ pub(crate) fn cls_maxqc3<G, T>(
     same_as: &mut SameAs<G, T>,
 ) where
     G: Scope,
-    G: ScopeParent<Timestamp = AltNeu<T>>,
+    G: ScopeParent<Timestamp = T>,
     T: Lattice + ExchangeData + Timestamp,
 {
     let d_ux = {
@@ -345,9 +419,24 @@ pub(crate) fn cls_maxqc3<G, T>(
                 },
             )
     };
-    same_as.add(d_ux);
-    same_as.add(d_upy);
-    same_as.add(d_yc);
+    same_as.add(d_ux.inspect_batch(|capability, records| {
+        println!(
+            "cls_maxqc3_dux: capability={:?}, records: {:?}",
+            capability, records
+        );
+    }));
+    same_as.add(d_upy.inspect_batch(|capability, records| {
+        println!(
+            "cls_maxqc3_dupy: capability={:?}, records: {:?}",
+            capability, records
+        );
+    }));
+    same_as.add(d_yc.inspect_batch(|capability, records| {
+        println!(
+            "cls_maxqc3_dyc: capability={:?}, records: {:?}",
+            capability, records
+        );
+    }));
 }
 
 // cls-maxqc4
@@ -364,10 +453,20 @@ T(?yn, rdf:type, ?c)
 pub(crate) fn cls_oo<G, T>(mut class_list: Vec<&mut Class<G, T>>, target_class: &Class<G, T>)
 where
     G: Scope,
-    G: ScopeParent<Timestamp = AltNeu<T>>,
+    G: ScopeParent<Timestamp = T>,
     T: Lattice + ExchangeData + Timestamp,
 {
-    for ref mut c_i in class_list.iter_mut() {
-        c_i.add(target_class.stream().clone());
+    for (i, ref mut c_i) in class_list.iter_mut().enumerate() {
+        c_i.add(
+            target_class
+                .stream()
+                .clone()
+                .inspect_batch(move |capability, records| {
+                    println!(
+                        "cls_oo: i={}, capability={:?}, records: {:?}",
+                        i, capability, records
+                    );
+                }),
+        );
     }
 }

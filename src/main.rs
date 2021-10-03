@@ -16,6 +16,8 @@ use differential_reasoner::{
 use timely::dataflow::operators::probe::Handle;
 use timely::dataflow::operators::Map;
 
+use ddshow_sink;
+
 use clap::{App, Arg};
 use lasso::{Key, Rodeo, Spur};
 use timely::progress::frontier::AntichainRef;
@@ -107,8 +109,15 @@ fn main() {
     let now = Instant::now();
 
     let mut config = timely::Config::process(workers);
-    config.worker = config.worker.progress_mode(timely::worker::ProgressMode::Eager);
+    //config.worker = config.worker.progress_mode(timely::worker::ProgressMode::Eager);
     let summaries = timely::execute(config, move |worker| {
+	let loggers= /*{ if let Some(folder) = */::std::env::var("TIMELY_WORKER_ALL_LOG_FOLDER").map(|folder| {
+	    let timely_logs = ddshow_sink::save_timely_logs_to_disk(worker, &folder).unwrap();
+	    let differential_logs = ddshow_sink::save_differential_logs_to_disk(worker, &folder).unwrap();
+    	    let timely_progress_logs = ddshow_sink::save_timely_progress_to_disk(worker, &folder).unwrap();
+	    (timely_logs, differential_logs, timely_progress_logs)
+	}// else {Err(std::io::Error::new(std::io::ErrorKind::Other, "No logging requested"))}
+	);
         let mut grand_ole_pry =
             Rodeo::<Spur, BuildHasherDefault<DefaultHasher>>::with_hasher(Default::default());
         let mut tbox_probe = Handle::new();
@@ -274,7 +283,7 @@ fn main() {
             );
         }
 
-        let (mut tbox_input_stream, mut abox_input_stream, mut tbox_trace, mut abox_trace) = worker
+        let (mut tbox_input_stream, mut abox_input_stream, mut tbox_trace, mut abox_trace)  = worker
             .dataflow::<u64, _, _>(|outer| {
                 let (mut _abox_in, abox) = outer.new_collection::<(usize, usize, usize), isize>();
 
@@ -286,7 +295,7 @@ fn main() {
                             outer.new_collection::<(usize, usize, usize), isize>();
                         (Some(_tbox_in), rdfs(&tbox_collection, &abox, outer))
                     }
-                    "owl2rl" => differential_reasoner::owl2rl::build_dataflow::digest_tbox(
+                    "owl2rl" => differential_reasoner::owl2rl::build_dataflow::digest_tbox::<_,_,_,_, u64>(
                         (&tbox).as_ref().unwrap().iter().cloned(),
                         abox.clone(),
                     )

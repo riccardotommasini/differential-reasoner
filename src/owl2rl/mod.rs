@@ -11,7 +11,6 @@ use differential_dataflow::{
     ExchangeData,
 };
 
-use dogsdogsdogs::altneu::AltNeu;
 use dogsdogsdogs::CollectionIndex;
 use timely::communication::message::RefOrMut::{Mut, Ref};
 
@@ -24,6 +23,7 @@ use timely::{
 pub(crate) type IRI = u32;
 pub(crate) type Time = u64;
 pub(crate) type Diff = Present;
+pub(crate) type AltNeu<T> = T;
 pub(crate) type SingleArrangement<G> =
     Arranged<G, TraceAgent<OrdKeySpine<IRI, <G as ScopeParent>::Timestamp, Diff>>>;
 
@@ -81,7 +81,7 @@ where
 impl<G, T> Property<G, T>
 where
     G: Scope,
-    G: ScopeParent<Timestamp = AltNeu<T>>,
+    G: ScopeParent<Timestamp = T>,
     T: Lattice + ExchangeData + Timestamp,
 {
     fn by_s_alt(&self) -> &DoubleIndex<G> {
@@ -96,6 +96,8 @@ where
     }
 
     fn by_s_neu(&self) -> &DoubleIndex<G> {
+        self.by_s_alt()
+        /*
         self.by_s_neu_.get_or_init(|| {
             CollectionIndex::index(&self.stream_.delay(|t| {
                 let mut t_neu = t.clone();
@@ -103,9 +105,12 @@ where
                 t_neu
             }))
         })
+        */
     }
 
     fn by_o_neu(&self) -> &DoubleIndex<G> {
+        self.by_o_alt()
+        /*
         self.by_o_neu_.get_or_init(|| {
             CollectionIndex::index(
                 &self
@@ -118,6 +123,7 @@ where
                     .map_in_place(|(x, y)| std::mem::swap(y, x)),
             )
         })
+        */
     }
 
     fn stream(&self) -> &Collection<G, (IRI, IRI), Diff> {
@@ -132,7 +138,7 @@ where
 impl<G, T> Class<G, T>
 where
     G: Scope,
-    G: ScopeParent<Timestamp = AltNeu<T>>,
+    G: ScopeParent<Timestamp = T>,
     T: Lattice + ExchangeData + Timestamp,
 {
     fn add(&mut self, collection: Collection<G, IRI, Diff>) {
@@ -144,15 +150,18 @@ where
     }
 
     fn neu(&self) -> &SingleArrangement<G> {
+        self.alt()
+        /*
         self.neu_.get_or_init(|| {
-            self.stream_
-                .delay(|t| {
-                    let mut t_neu = t.clone();
-                    t_neu.neu = true;
-                    t_neu
-                })
-                .arrange_by_self()
-        })
+                self.stream_
+                    .delay(|t| {
+                        let mut t_neu = t.clone();
+                        t_neu.neu = true;
+                        t_neu
+                    })
+                    .arrange_by_self()
+            })
+            */
     }
 
     fn extender_alt(&self) -> &SingleIndex<G> {
@@ -161,6 +170,8 @@ where
     }
 
     fn extender_neu(&self) -> &SingleIndex<G> {
+        self.extender_alt()
+        /*
         self.neu_extender_.get_or_init(|| {
             CollectionIndex::index(
                 &self
@@ -173,6 +184,7 @@ where
                     .map(|x| (x, ())),
             )
         })
+        */
     }
 
     fn stream(&self) -> &Collection<G, IRI, Diff> {
@@ -183,7 +195,7 @@ where
 impl<G, T> SameAs<G, T>
 where
     G: Scope,
-    G: ScopeParent<Timestamp = AltNeu<T>>,
+    G: ScopeParent<Timestamp = T>,
     T: Lattice + ExchangeData + Timestamp,
 {
     fn alt(&self) -> &DoubleIndex<G> {
@@ -192,6 +204,8 @@ where
     }
 
     fn neu(&self) -> &DoubleIndex<G> {
+	self.alt()
+	/*
         self.neu_.get_or_init(|| {
             CollectionIndex::index(&self.stream_.delay(|t| {
                 let mut t_neu = t.clone();
@@ -199,6 +213,7 @@ where
                 t_neu
             }))
         })
+	    */
     }
 
     fn add(&mut self, collection: Collection<G, (IRI, IRI), Diff>) {

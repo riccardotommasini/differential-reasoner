@@ -11,3 +11,4 @@ lasso = "0.6.0"
 dogsdogsdogs = { git = "https://github.com/DataSystemsGroupUT/differential-dataflow.git", rev="3e0d68664633f87a38c8385744ff0ef618ef35ae" }
 clap = "3.0.0-beta.4"
 linecount = "0.1.0"
+ddshow-sink = { path = "../../Kixiron/timely-viz/crates/ddshow-sink" }
