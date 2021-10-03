@@ -146,13 +146,13 @@ where
         .collect::<BTreeSet<_>>();
     let mut property_feedback = id_set
         .iter()
-        .map(|&x| (x, SemigroupVariable::new(&mut scope, u32::MAX as u64)))
+        .map(|&x| (x, SemigroupVariable::new(&mut scope, 1/*u32::MAX as u64*/)))
         .collect::<BTreeMap<_, _>>();
     let mut class_feedback = id_set
         .iter()
-        .map(|&x| (x, SemigroupVariable::new(&mut scope, u32::MAX as u64)))
+        .map(|&x| (x, SemigroupVariable::new(&mut scope, 1/*u32::MAX as u64*/)))
         .collect::<BTreeMap<_, _>>();
-    let same_as_feedback = SemigroupVariable::new(&mut scope, u32::MAX as u64);
+    let same_as_feedback = SemigroupVariable::new(&mut scope, 1/*u32::MAX as u64*/);
     let output = scope
         .clone()
         .scoped::<AltNeu<T>, _, _>("ABox iteration", |inner| {
@@ -209,6 +209,7 @@ where
                     _ => None,
                 })
                 .collect::<BTreeMap<_, _>>();
+            println!("first_index={:?}", first_index);
             let rest_index = triples
                 .iter()
                 .flat_map(|&triple| match triple {
@@ -237,6 +238,7 @@ where
                     (c, owl::intersectionOf, x) => {
                         let mut rest = x;
                         while rest != rdf::nil {
+                            println!("intersectionOf: loop: rest={:?}", rest);
                             sco.entry(c)
                                 .or_insert_with(BTreeSet::new)
                                 .insert(first_index[&rest]);
@@ -258,37 +260,157 @@ where
 
             let (sco, mut canon_class) = {
                 let mut sco = sco;
-                let mut new_sco = BTreeMap::<u32, BTreeSet<u32>>::new();
+                let mut canonized_sco = BTreeMap::<u32, BTreeSet<u32>>::new();
                 let mut new_new_sco = BTreeMap::<u32, BTreeSet<u32>>::new();
                 let mut canonizer = DisjointSet::new(id_set.clone());
                 loop {
+		    let mut changed = false;
+                    // Canonize IDs in `sco`
                     for (&c, subclasses) in sco.iter() {
-                        (new_sco.entry(canonizer.find(c)).or_default())
-                            .extend(subclasses.iter().map(|&x| canonizer.find(x)));
+			let canon_c = canonizer.find(c);
+			let canon_subclasses = subclasses.iter().map(|&x| canonizer.find(x)).filter(|&x| x != canon_c).collect::<BTreeSet<_>>();
+                        let target = canonized_sco.entry(canon_c).or_default();
+                        target.extend(canon_subclasses.iter());
                     }
-                    for (&c, subclasses) in new_sco.iter() {
-                        if subclasses.contains(&c) {
+		    let mut canonized_sco_scm_sco = canonized_sco.clone();
+		    for (&c, c2s) in canonized_sco.clone().iter() {
+			let canon_c = c;
+                        let target = canonized_sco_scm_sco.entry(canon_c).or_default();
+			for &c2 in c2s.iter() {
+			    if let Some(c3s) = canonized_sco.get(&c2) {
+				target.extend(c3s.iter());
+			    }
+			}
+                    }
+                    // Union those that contain someone who contains themselves, with that someone
+		    for (&c, subclasses) in canonized_sco.iter() {
+			for &subclass in subclasses.iter() {
+			    if let Some(subclasses_of_subclass) = canonized_sco.get(&subclass) {
+				if subclasses_of_subclass.contains(&c) {
+				    canonizer.union(c, subclass);
+				    println!("calling union: {}, {}", c, subclass);
+				    changed = true;
+				}
+			    }
+			}
+		    }
+		    /*
+                    for (&c, subclasses) in canonized_sco.iter() {
+                        if subclasses.iter().any(|&c2| {
+                            let canon_c2 = canonizer.find(c2);
+                            canonized_sco
+                                .get(&canon_c2)
+                                .and_then(|x| x.contains(&c).then_some(()))
+                                .is_some()
+                        }) {
                             for &c2 in subclasses.iter() {
                                 canonizer.union(c, c2);
                             }
                         }
                     }
-                    for (&c1, c2s) in new_sco.iter() {
-                        for &c3 in c2s.iter().flat_map(|&c2| new_sco.get(&c2)).flatten() {
+		    
+                    for (&c1, c2s) in canonized_sco.iter() {
+                        for &c3 in c2s.iter().flat_map(|&c2| canonized_sco.get(&c2)).flatten() {
                             (new_new_sco.entry(canonizer.find(c1)).or_default())
                                 .insert(canonizer.find(c3));
                         }
                     }
-                    if sco == new_sco && new_sco == new_new_sco {
+		    */
+                    println!(
+                        "sco.len: {}, new_sco.len: {}, new_new_sco.len: {}, canonized_sco_scm_sco.len: {}, changed: {}",
+                        sco.len(),
+                        canonized_sco.len(),
+                        new_new_sco.len(),
+			canonized_sco_scm_sco.len(),
+			&changed
+                    );
+                    if !changed && sco == canonized_sco && canonized_sco == canonized_sco_scm_sco /*&& canonized_sco == new_new_sco */ {
                         break (sco, canonizer);
                     } else {
-                        sco = new_sco;
-                        new_sco = new_new_sco;
+                        sco = canonized_sco_scm_sco;
+                        canonized_sco = BTreeMap::new();//new_new_sco;
                         new_new_sco = BTreeMap::new();
                     }
                 }
             };
 
+	     let (spo, mut canon_property) = {
+                let mut spo = spo;
+                let mut canonized_spo = BTreeMap::<u32, BTreeSet<u32>>::new();
+                let mut new_new_spo = BTreeMap::<u32, BTreeSet<u32>>::new();
+                let mut canonizer = DisjointSet::new(id_set.clone());
+                loop {
+		    let mut changed = false;
+                    // Canonize IDs in `spo`
+                    for (&p, subproperties) in spo.iter() {
+			let canon_p = canonizer.find(p);
+			let canon_subproperties = subproperties.iter().map(|&x| canonizer.find(x)).filter(|&x| x != canon_p).collect::<BTreeSet<_>>();
+                        let target = canonized_spo.entry(canon_p).or_default();
+                        target.extend(canon_subproperties.iter());
+                    }
+		    let mut canonized_spo_scm_spo = canonized_spo.clone();
+		    for (&p, p2s) in canonized_spo.clone().iter() {
+			let canon_p = p;
+                        let target = canonized_spo_scm_spo.entry(canon_p).or_default();
+			for &p2 in p2s.iter() {
+			    if let Some(p3s) = canonized_spo.get(&p2) {
+				target.extend(p3s.iter());
+			    }
+			}
+                    }
+                    // Union those that contain someone who contains themselves, with that someone
+		    for (&p, subproperties) in canonized_spo.iter() {
+			for &subproperty in subproperties.iter() {
+			    if let Some(subproperties_of_subproperty) = canonized_spo.get(&subproperty) {
+				if subproperties_of_subproperty.contains(&p) {
+				    canonizer.union(p, subproperty);
+				    println!("calling union: {}, {}", p, subproperty);
+				    changed = true;
+				}
+			    }
+			}
+		    }
+		    /*
+                    for (&c, subproperties) in canonized_spo.iter() {
+                        if subproperties.iter().any(|&c2| {
+                            let canon_c2 = canonizer.find(c2);
+                            canonized_spo
+                                .get(&canon_c2)
+                                .and_then(|x| x.contains(&c).then_some(()))
+                                .is_some()
+                        }) {
+                            for &c2 in subproperties.iter() {
+                                canonizer.union(c, c2);
+                            }
+                        }
+                    }
+		    
+                    for (&c1, c2s) in canonized_spo.iter() {
+                        for &c3 in c2s.iter().flat_map(|&c2| canonized_spo.get(&c2)).flatten() {
+                            (new_new_spo.entry(canonizer.find(c1)).or_default())
+                                .insert(canonizer.find(c3));
+                        }
+                    }
+		    */
+                    println!(
+                        "spo.len: {}, new_spo.len: {}, new_new_spo.len: {}, canonized_spo_scm_spo.len: {}, changed: {}",
+                        spo.len(),
+                        canonized_spo.len(),
+                        new_new_spo.len(),
+			canonized_spo_scm_spo.len(),
+			&changed
+                    );
+                    if !changed && spo == canonized_spo && canonized_spo == canonized_spo_scm_spo /*&& canonized_spo == new_new_spo */ {
+                        break (spo, canonizer);
+                    } else {
+                        spo = canonized_spo_scm_spo;
+                        canonized_spo = BTreeMap::new();//new_new_spo;
+                        new_new_spo = BTreeMap::new();
+                    }
+                }
+            };
+
+	    /*
             let (spo, mut canon_property) = {
                 let mut spo = spo;
                 let mut new_spo = BTreeMap::<u32, BTreeSet<u32>>::new();
@@ -321,6 +443,7 @@ where
                     }
                 }
             };
+	    */
 
             let list = |start: u32| -> Vec<u32> {
                 let mut rest = start;
@@ -542,6 +665,7 @@ where
                 })
             };
 
+	    let class_bypass =
             {
                 let c_map = classes
                     .keys()
@@ -549,19 +673,30 @@ where
                     .map(|(i, &c)| (c, TryInto::<u64>::try_into(i).unwrap()))
                     .collect::<BTreeMap<_, _>>();
 
-                let partitioned_class_inputs = class_inputs.inner.partition(
-                    classes.len().try_into().unwrap(),
+		let partition_count = TryInto::<u64>::try_into(classes.len()).unwrap() + 1;
+                let mut partitioned_class_inputs = class_inputs.inner.partition(
+		    partition_count,
                     // TODO: Consider doing diff-conversion somewhere else
-                    move |((c, x), timestamp, _diff)| (c_map[&c], (x, timestamp, Present)),
+                    move |((c, x), timestamp, _diff)|
+		    match c_map.get(&c) {
+			Some(&mapped_c) => (mapped_c, ((x, c), timestamp, Present)),
+			    None => {
+				println!("class_partitioning_issue: c={}, x={}", c, x);
+				(partition_count - 1, ((x, c), timestamp, Present))
+			    }
+			}
                 );
+
+		let class_bypass = partitioned_class_inputs.pop();
 
                 for (class, input) in classes
                     .values_mut()
                     .zip(partitioned_class_inputs.into_iter())
                 {
-                    class.add(input.as_collection().enter(inner));
+                    class.add(input.as_collection().map(|(x, _c)| x).enter(inner));
                 }
-            }
+		class_bypass
+            };
 
             let property_inputs = {
                 abox.flat_map(|(s, p, o)| {
@@ -590,7 +725,13 @@ where
                     properties.len().try_into().unwrap(),
                     // TODO: Consider doing diff-conversion somewhere else
                     move |((p, (s, o)), timestamp, _diff)| {
-                        (p_map[&p], ((s, o), timestamp, Present))
+			match p_map.get(&p) {
+			    Some(&mapped_p) =>       (mapped_p, ((s, o), timestamp, Present)),
+			    None => {
+					println!("property_partitioning_issue: s={}, p={}, o={}", s, p, o);
+				(*p_map.iter().next().unwrap().1, ((s, o), timestamp, Present))
+			    }
+			}
                     },
                 );
 
@@ -646,7 +787,8 @@ where
                     class_feedback.remove(id).map(|feedback_handle| {
                         feedback_handle.set(
                             &concatenate(inner, input_streams)
-                                .consolidate_stream_aggressively()
+                                .consolidate()
+//                                .consolidate_stream_aggressively()
                                 .leave()
                                 .consolidate(),
                         );
@@ -658,7 +800,8 @@ where
                 property_feedback.remove(id).map(|feedback_handle| {
                     feedback_handle.set(
                         &concatenate(inner, property.feedback_.clone())
-                            .consolidate_stream_aggressively()
+                            .consolidate()
+//                            .consolidate_stream_aggressively()
                             .leave()
                             .consolidate(),
                     );
@@ -670,7 +813,8 @@ where
                     inner,
                     same_as.feedback_.into_iter().chain(Some(same_as_input)),
                 )
-                .consolidate_stream_aggressively()
+                    .consolidate()
+//                .consolidate_stream_aggressively()
                 .leave()
                 .consolidate(),
             );
@@ -695,7 +839,8 @@ where
                     .map(|(&p, property)| property.stream().leave().map(move |(s, o)| (s, p, o)))
                     .chain(classes.iter().map(|(&c, class)| {
                         class.stream().leave().map(move |x| (x, rdf::r#type, c))
-                    })),
+                    }))
+                    .chain(class_bypass.map(|class_bypass| class_bypass.as_collection().map(|(x, c)| (x, rdf::r#type, c)))),
             )
         });
     Ok(output)

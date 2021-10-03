@@ -1,3 +1,4 @@
+#![feature(duration_constants)]
 use differential_dataflow::trace::cursor::CursorDebug;
 use differential_dataflow::trace::TraceReader;
 use differential_dataflow::AsCollection;
@@ -17,10 +18,13 @@ use timely::dataflow::operators::Map;
 
 use clap::{App, Arg};
 use lasso::{Key, Rodeo, Spur};
+use timely::progress::frontier::AntichainRef;
 use std::collections::hash_map::DefaultHasher;
+use std::convert::TryInto;
 use std::fs::File;
 use std::hash::BuildHasherDefault;
 use std::io::{BufRead, BufReader};
+use std::time::Duration;
 use std::time::Instant;
 
 fn read_file(filename: &str) -> impl Iterator<Item = String> {
@@ -32,9 +36,9 @@ pub fn load3nt<'a>(filename: &str) -> impl Iterator<Item = (String, String, Stri
     read_file(filename).map(move |line| {
         let mut line_clean = line;
 
-        line_clean.pop();
+        //        line_clean.pop();
 
-        line_clean.pop();
+        //        line_clean.pop();
 
         let mut elts = line_clean.split(' ');
 
@@ -90,7 +94,9 @@ fn main() {
 
     let now = Instant::now();
 
-    let summaries = timely::execute(timely::Config::process(workers), move |worker| {
+    let mut config = timely::Config::process(workers);
+    config.worker = config.worker.progress_mode(timely::worker::ProgressMode::Eager);
+    let summaries = timely::execute(config, move |worker| {
         let mut grand_ole_pry =
             Rodeo::<Spur, BuildHasherDefault<DefaultHasher>>::with_hasher(Default::default());
         let mut tbox_probe = Handle::new();
@@ -242,9 +248,14 @@ fn main() {
                         let key_p = grand_ole_pry.get_or_intern(p);
                         let key_o = grand_ole_pry.get_or_intern(o);
 
-                        let key_s_int = key_s.into_usize();
-                        let key_p_int = key_p.into_usize();
-                        let key_o_int = key_o.into_usize();
+                        let key_s_int = key_s.into_inner().get().try_into().unwrap();
+                        let key_p_int = key_p.into_inner().get().try_into().unwrap();
+                        let key_o_int = key_o.into_inner().get().try_into().unwrap();
+
+                        println!(
+                            "{}, {}, {}: {}, {}, {}",
+                            key_s_int, key_p_int, key_o_int, s, p, o
+                        );
                         (key_s_int, key_p_int, key_o_int)
                     })
                     .collect::<Vec<_>>(),
@@ -274,6 +285,7 @@ fn main() {
                             .inner
                             .map(|((s, p, o), t, _r)| ((s as usize, p as usize, o as usize), t, 1))
                             .as_collection();
+                        println!("Got normal ABox stream output after building dataflow.");
                         (None, (tbox_out, abox_out))
                     })
                     .unwrap(),
@@ -294,30 +306,63 @@ fn main() {
             });
         if let Some(tbox) = tbox {
             if 0 == worker.index() {
-                let abox = load3nt(&a_path);
+                let mut abox = load3nt(&a_path);
                 println!("A-box location: {}", &a_path);
 
-                if let Some(ref mut tbox_input_stream) = tbox_input_stream {
+                if let Some(mut tbox_input_stream) = tbox_input_stream.take() {
                     tbox.iter().for_each(|&triple| {
                         tbox_input_stream.insert(triple);
                     });
+                    tbox_input_stream.close();
                 }
 
-                abox.for_each(|triple| {
-                    let s = &triple.0[..];
-                    let p = &triple.1[..];
-                    let o = &triple.2[..];
+                const BATCH_SIZE: u32 = 128;
 
-                    let key_s = grand_ole_pry.get_or_intern(s);
-                    let key_p = grand_ole_pry.get_or_intern(p);
-                    let key_o = grand_ole_pry.get_or_intern(o);
+                let mut iteration_count = 0;
 
-                    let key_s_int = key_s.into_usize();
-                    let key_p_int = key_p.into_usize();
-                    let key_o_int = key_o.into_usize();
+                'outer: loop {
+                    for _ in 0..BATCH_SIZE {
+                        if let Some(triple) = abox.next() {
+                            let s = &triple.0[..];
+                            let p = &triple.1[..];
+                            let o = &triple.2[..];
 
-                    abox_input_stream.insert((key_s_int, key_p_int, key_o_int));
-                });
+                            let key_s = grand_ole_pry.get_or_intern(s);
+                            let key_p = grand_ole_pry.get_or_intern(p);
+                            let key_o = grand_ole_pry.get_or_intern(o);
+
+                            let key_s_int = key_s.into_inner().get().try_into().unwrap();
+                            let key_p_int = key_p.into_inner().get().try_into().unwrap();
+                            let key_o_int = key_o.into_inner().get().try_into().unwrap();
+
+                            abox_input_stream.insert((key_s_int, key_p_int, key_o_int));
+                        } else {
+                            break 'outer;
+                        }
+                    }
+                    let worker_index = worker.index();
+                    const STEP_COUNT: u64 = 10;
+                    abox_input_stream.advance_to(abox_input_stream.epoch() + STEP_COUNT/*(u32::MAX as u64)*/);
+                    abox_input_stream.flush();
+                    for _ in 0..STEP_COUNT {
+                        worker.step();
+                        println!(
+                            "{}-inside-abox-step-loop1, iteration {}",
+                            worker_index, iteration_count
+                        );
+                        iteration_count += 1;
+                    }
+                    /*
+                    worker.step_while(|| {
+                                    println!(
+                                        "{}-inside-abox-probe-loop1, iteration {}",
+                                        worker_index, iteration_count
+                                    );
+                                    iteration_count += 1;
+                                    abox_probe.less_than(abox_input_stream.time())
+                                });
+                    */
+                }
             }
         } else {
             let abox = load3enc(&a_path);
@@ -334,15 +379,34 @@ fn main() {
             }
         };
 
-        if let Some(ref mut tbox_input_stream) = tbox_input_stream {
+        if let Some(mut tbox_input_stream) = tbox_input_stream.take() {
             tbox_input_stream.advance_to(1);
             tbox_input_stream.flush();
+            tbox_input_stream.close();
         };
-        worker.step();
-        abox_input_stream.advance_to(1);
+        //        worker.step();
+        //        abox_input_stream.advance_to(1);
         abox_input_stream.flush();
+        let abox_input_stream_time = *abox_input_stream.time();
+        abox_input_stream.close();
         worker.step();
-        worker.step_while(|| abox_probe.less_than(abox_input_stream.time()));
+        println!("{}-pre-abox-probe-loop", worker.index());
+        let mut iteration_count = 0;
+        let worker_index = worker.index();
+	tbox_trace.set_logical_compaction(AntichainRef::new(&[(u32::MAX as u64)*100]));
+	abox_trace.set_logical_compaction(AntichainRef::new(&[(u32::MAX as u64)*100]));
+	abox_trace.set_physical_compaction(AntichainRef::new(&[(u32::MAX as u64) * 100]));
+        worker.step_or_park_while(Some(Duration::SECOND), || {
+            abox_probe.with_frontier(|frontier| {
+                println!(
+                    "{}-inside-abox-probe-loop2, iteration {}, frontier: {:?}",
+                    worker_index, iteration_count, &frontier
+                );
+            });
+            iteration_count += 1;
+            abox_probe.less_than(&abox_input_stream_time)
+        });
+        println!("{}-post-abox-probe-loop", worker.index());
         let (mut tbox_cursor, tbox_storage) = tbox_trace.cursor();
         let (mut abox_cursor, abox_storage) = abox_trace.cursor();
         (
